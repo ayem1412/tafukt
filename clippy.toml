@@ -1,0 +1,2 @@
+check-inconsistent-struct-field-initializers = true
+lint-commented-code = true
