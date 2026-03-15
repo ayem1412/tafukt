@@ -1,4 +1,4 @@
-name: Rust
+name: ci
 
 on:
   push:
@@ -11,13 +11,9 @@ env:
 
 jobs:
   build:
-
     runs-on: ubuntu-latest
-
     steps:
     - uses: actions/checkout@v4
-    - name: Format
-      run: cargo +nightly fmt --verbose --all
     - name: Run tests
       run: cargo test --verbose
     - name: Build
