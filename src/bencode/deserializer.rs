@@ -5,17 +5,35 @@ use crate::util;
 
 pub struct Deserializer<'a, R: io::Read>(&'a mut R);
 
+// CREDITS: This code was mostly inspired by https://www.nayuki.io/res/bittorrent-bencode-format-tools/bencode.rs
 impl<'a, R: io::Read> Deserializer<'a, R> {
     pub fn new(reader: &'a mut R) -> Self {
         Self(reader)
     }
 
+    /// Reads from the `Reader` exactly one byte and return it.
+    fn read_byte(&mut self) -> io::Result<u8> {
+        let mut byte = 0u8;
+        self.0.read_exact(slice::from_mut(&mut byte))?;
+        Ok(byte)
+    }
+
     /// Reads each byte and parses it into a valid Bencode.
     fn parse(&mut self) -> io::Result<Bencode> {
-        let byte = self.read_byte()?;
-        match byte {
+        let mut byte = self.read_byte()?;
+        let result = self.parse_value(byte)?;
+
+        if self.0.read(std::slice::from_mut(&mut byte))? > 0 {
+            return Err(io::Error::new(io::ErrorKind::InvalidData, "Unexpcted extra data!"));
+        }
+
+        Ok(result)
+    }
+
+    fn parse_value(&mut self, head: u8) -> io::Result<Bencode> {
+        match head {
             b'i' => self.parse_integer(),
-            b'0'..=b'9' => Ok(Bencode::String(self.parse_byte_string(byte)?)),
+            b'0'..=b'9' => Ok(Bencode::String(self.parse_byte_string(head)?)),
             _ => panic!("aa"),
         }
     }
@@ -56,7 +74,7 @@ impl<'a, R: io::Read> Deserializer<'a, R> {
     /// Parses a String into a vector of bytes.
     fn parse_byte_string(&mut self, head: u8) -> io::Result<Vec<u8>> {
         let string_length = self.parse_string_length_integer(head)?;
-        let mut buffer: Vec<u8> = Vec::with_capacity(string_length);
+        let mut buffer = vec![0u8; string_length];
         self.0.read_exact(&mut buffer)?;
 
         Ok(buffer)
@@ -72,16 +90,16 @@ impl<'a, R: io::Read> Deserializer<'a, R> {
                 util::invalid_data_error("Invalid integer!")?
             }
 
+            string_length.push(char::from(head));
+
             byte = self.read_byte()?;
             if byte.eq(&b':') {
                 break;
             }
-
-            string_length.push(char::from(head));
         }
 
         if string_length.is_empty() {
-            util::invalid_data_error(format!("Invalid integer syntax!, Received: {}", string_length).as_str())?
+            util::invalid_data_error("Invalid integer syntax!")?
         }
 
         string_length.parse::<usize>().map_err(|_| {
@@ -91,11 +109,34 @@ impl<'a, R: io::Read> Deserializer<'a, R> {
             )
         })
     }
+}
 
-    /// Reads from the `Reader` exactly one byte and return it.
-    fn read_byte(&mut self) -> io::Result<u8> {
-        let mut byte = 0u8;
-        self.0.read_exact(slice::from_mut(&mut byte))?;
-        Ok(byte)
+#[cfg(test)]
+mod tests {
+    use crate::bencode::Bencode;
+    use crate::bencode::deserializer::Deserializer;
+
+    #[test]
+    fn test_parse_integer() {
+        use std::io::BufReader;
+
+        let bencode = "i2000000e";
+        let mut reader = BufReader::new(bencode.as_bytes());
+        let mut deserializer = Deserializer::new(&mut reader);
+        let result = deserializer.parse().unwrap();
+
+        assert_eq!(result, Bencode::Integer(2000000))
+    }
+
+    #[test]
+    fn test_parse_byte_string() {
+        use std::io::BufReader;
+
+        let bencode = "4:spam";
+        let mut reader = BufReader::new(bencode.as_bytes());
+        let mut deserializer = Deserializer::new(&mut reader);
+        let result = deserializer.parse().unwrap();
+
+        assert_eq!(result, Bencode::String("spam".as_bytes().to_vec()))
     }
 }
