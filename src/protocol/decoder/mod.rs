@@ -1,12 +1,99 @@
+#[cfg(test)]
+mod tests;
+
+use crate::protocol::Bencode;
+use crate::protocol::decoder::error::DecoderError;
+
+mod error;
+mod util;
+
+pub struct Decoder<'a, B: Iterator<Item = u8>>(pub &'a mut B);
+
+type DecoderResult = Result<Bencode, DecoderError>;
+
+impl<'a, B: Iterator<Item = u8>> Decoder<'a, B> {
+    pub fn new(bytes: &'a mut B) -> Self {
+        Self(bytes)
+    }
+
+    pub fn decode(&mut self) -> DecoderResult {
+        let result = match self.0.next() {
+            Some(head) => self.parse(head),
+            None => Err(DecoderError::Empty),
+        };
+
+        if result.is_err() {
+            return result;
+        }
+
+        match self.0.next() {
+            Some(_) => Err(DecoderError::UnexpectedExtraData),
+            None => result,
+        }
+    }
+
+    fn parse(&mut self, head: u8) -> DecoderResult {
+        match head {
+            b'i' => self.parse_integer(),
+            _ => todo!(),
+        }
+    }
+
+    fn parse_integer(&mut self) -> DecoderResult {
+        let mut is_negative = false;
+        let mut buff: Vec<u8> = vec![];
+
+        let head = match self.0.next() {
+            Some(head) => head,
+            None => return Err(DecoderError::InvalidIntegerSyntax),
+        };
+
+        if head.eq(&b'-') {
+            is_negative = true;
+        } else if head.ge(&b'0') && head.le(&b'9') {
+            buff.push(head);
+        } else {
+            return Err(DecoderError::InvalidIntegerSyntax);
+        }
+
+        while let Some(byte) = self.0.next() {
+            match byte {
+                b'e' => break,
+                b'0'..=b'9' => buff.push(byte),
+                _ => return Err(DecoderError::InvalidByte("integer".to_string())),
+            }
+        }
+
+        if buff.len() > 1 && buff[0] == b'0' {
+            return Err(DecoderError::IntegerLeadingZero);
+        }
+
+        let mut integer = util::bytes_to_integer(buff)?;
+        if integer.eq(&0) && is_negative {
+            return Err(DecoderError::IntegerNegativeZero);
+        }
+
+        if is_negative {
+            integer *= -1
+        };
+
+        Ok(Bencode::Integer(integer))
+    }
+}
+
+/*
+
+
+use std::collections::BTreeMap;
 use std::{char, io, slice};
 
-use crate::bencode::Bencode;
+use crate::protocol::Bencode;
 use crate::util;
 
-pub struct Deserializer<'a, R: io::Read>(&'a mut R);
+pub struct Decoder<'a, R: io::Read>(&'a mut R);
 
 // CREDITS: This code was mostly inspired by https://www.nayuki.io/res/bittorrent-bencode-format-tools/bencode.rs
-impl<'a, R: io::Read> Deserializer<'a, R> {
+impl<'a, R: io::Read> Decoder<'a, R> {
     pub fn new(reader: &'a mut R) -> Self {
         Self(reader)
     }
@@ -34,11 +121,12 @@ impl<'a, R: io::Read> Deserializer<'a, R> {
         match head {
             b'i' => self.parse_integer(),
             b'0'..=b'9' => Ok(Bencode::String(self.parse_byte_string(head)?)),
-            _ => panic!("aa"),
+            b'l' => self.parse_list(),
+            _ => panic!("Invalid bencode: {}", head as char),
         }
     }
 
-    // Parses an integer into a valid Bencode.
+    /// Parses an integer into a valid Bencode.
     fn parse_integer(&mut self) -> io::Result<Bencode> {
         let mut integer_str = String::new();
 
@@ -109,34 +197,36 @@ impl<'a, R: io::Read> Deserializer<'a, R> {
             )
         })
     }
-}
 
-#[cfg(test)]
-mod tests {
-    use crate::bencode::Bencode;
-    use crate::bencode::deserializer::Deserializer;
+    /// Parses a list into a valid Bencode.
+    fn parse_list(&mut self) -> io::Result<Bencode> {
+        let mut list = Vec::new();
 
-    #[test]
-    fn test_parse_integer() {
-        use std::io::BufReader;
+        loop {
+            match self.read_byte()? {
+                b'e' => break,
+                byte => list.push(self.parse_value(byte)?),
+            }
+        }
 
-        let bencode = "i2000000e";
-        let mut reader = BufReader::new(bencode.as_bytes());
-        let mut deserializer = Deserializer::new(&mut reader);
-        let result = deserializer.parse().unwrap();
-
-        assert_eq!(result, Bencode::Integer(2000000))
+        Ok(Bencode::List(list))
     }
 
-    #[test]
-    fn test_parse_byte_string() {
-        use std::io::BufReader;
+    // Parses a list into a valid Bencode.
+    /* fn parse_dictionnary(&mut self) -> io::Result<Bencode> {
+        let mut dictionnary = BTreeMap::new();
 
-        let bencode = "4:spam";
-        let mut reader = BufReader::new(bencode.as_bytes());
-        let mut deserializer = Deserializer::new(&mut reader);
-        let result = deserializer.parse().unwrap();
+        loop {
+            let key = match self.read_byte()? {
+                b'e' => break,
+                byte => self.parse_byte_string(byte)?,
+            };
 
-        assert_eq!(result, Bencode::String("spam".as_bytes().to_vec()))
-    }
-}
+            let prev_key = dictionnary.keys().next_back();
+            if prev_key.map_or(false, |k| key <= *k) {
+            };
+        }
+
+        Ok(Bencode::Dictionnary(dictionnary))
+    } */
+} */
