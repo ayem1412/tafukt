@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 
-pub mod deserializer;
+pub mod decoder;
 
 #[derive(Debug, PartialEq)]
 pub enum Bencode {
@@ -9,7 +9,7 @@ pub enum Bencode {
     /// Integers have no size limitation. i-0e is invalid.
     /// All encodings with a leading zero, such as i03e, are invalid, other than i0e, which of
     /// course corresponds to 0.
-    Integer(i128),
+    Integer(i64),
 
     /// Lists are encoded as an 'l' followed by their elements (also bencoded) followed by an 'e'.
     /// For example l4:spam4:eggse corresponds to ['spam', 'eggs'].
