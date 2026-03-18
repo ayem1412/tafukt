@@ -13,33 +13,10 @@ fn main() {
         String::from_utf8_unchecked(include_bytes!("../torrents/716CDB3E77094135E601A83B555CBBB3EB1D9557.torrent").to_vec())
     }; */
 
-    /* let file = File::open("./torrents/archlinux-2026.03.01-x86_64.iso.torrent").unwrap();
+    let file = File::open("./torrents/archlinux-2026.03.01-x86_64.iso.torrent").unwrap();
     let reader = BufReader::new(file);
     let mut bytes = reader.bytes().map(|c| c.unwrap());
-    let decoder = Decoder::new(&mut bytes); */
-    // println!("BYTES: {:#?}", decoder.0);
-    // const BYTES_TO_READ: usize = 100000;
-    /* let buf = 0u8;
-    reader.read_exact().unwrap();
-    println!("buf 1: {}", buf);
-    reader.read_exact(&mut [buf]).unwrap();
-    println!("buf 2: {}", buf);
-    reader.read_exact(&mut [buf]).unwrap();
-    println!("buf 3: {}", buf); */
-
-    /* for byte_result in reader.bytes().take(BYTES_TO_READ) {
-        match byte_result {
-            Ok(byte) => print!("{}", byte as char),
-            Err(_) => todo!(),
-        }
-    } */
-    // println!();
-
-    let bencode = "i00010e";
-    let mut bytes = bencode.bytes().into_iter();
     let mut decoder = Decoder::new(&mut bytes);
-    let result = decoder.decode();
-    println!("{:#?}", result);
-    /* let mut deserializer = Deserializer::new(&mut reader);
-    let result = deserializer.parse().unwrap(); */
+    let result = decoder.decode().unwrap();
+    println!("result: {}", result);
 }

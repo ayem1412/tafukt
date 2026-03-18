@@ -147,7 +147,7 @@ impl<'a, B: Iterator<Item = u8>> Decoder<'a, B> {
             let key = self.parse(byte)?;
             let key = match key {
                 Bencode::String(bytes) => util::validate_utf8_string(&bytes)?,
-                _ => return Err(DecoderError::DictionaryInvalidKeyType)
+                _ => return Err(DecoderError::DictionaryInvalidKeyType),
             };
 
             let value = self.0.next().ok_or(DecoderError::MissingTerminator)?;
