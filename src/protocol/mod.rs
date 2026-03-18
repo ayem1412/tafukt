@@ -22,5 +22,5 @@ pub enum Bencode {
     /// For example, d3:cow3:moo4:spam4:eggse corresponds to {'cow': 'moo', 'spam': 'eggs'}
     /// and d4:spaml1:a1:bee corresponds to {'spam': ['a', 'b']}.
     /// Keys must be strings and appear in sorted order (sorted as raw strings, not alphanumerics).
-    Dictionnary(BTreeMap<String, Self>),
+    Dictionary(BTreeMap<String, Self>),
 }

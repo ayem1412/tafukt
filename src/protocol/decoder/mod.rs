@@ -9,6 +9,8 @@
 #[cfg(test)]
 mod tests;
 
+use std::collections::BTreeMap;
+
 use crate::protocol::Bencode;
 use crate::protocol::decoder::error::DecoderError;
 
@@ -43,7 +45,8 @@ impl<'a, B: Iterator<Item = u8>> Decoder<'a, B> {
                 self.parse_byte_string(len)
             },
             b'l' => self.parse_list(),
-            _ => todo!(),
+            b'd' => self.parse_dictionary(),
+            _ => Err(DecoderError::UnknownType(head.to_string())),
         }
     }
 
@@ -131,5 +134,28 @@ impl<'a, B: Iterator<Item = u8>> Decoder<'a, B> {
         }
 
         Ok(Bencode::List(list))
+    }
+
+    fn parse_dictionary(&mut self) -> DecoderResult {
+        let mut dictionnary = BTreeMap::new();
+        loop {
+            let byte = self.0.next().ok_or(DecoderError::MissingTerminator)?;
+            if byte == b'e' {
+                break;
+            }
+
+            let key = self.parse(byte)?;
+            let key = match key {
+                Bencode::String(bytes) => util::validate_utf8_string(&bytes)?,
+                _ => return Err(DecoderError::DictionaryInvalidKeyType)
+            };
+
+            let value = self.0.next().ok_or(DecoderError::MissingTerminator)?;
+            let value = self.parse(value)?;
+
+            dictionnary.insert(key, value);
+        }
+
+        Ok(Bencode::Dictionary(dictionnary))
     }
 }

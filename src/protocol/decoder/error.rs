@@ -5,6 +5,9 @@ pub enum DecoderError {
     #[error("no bytes to read")]
     Empty,
 
+    #[error("unknown type {0}")]
+    UnknownType(String),
+
     #[error("unexpected extra data")]
     UnexpectedExtraData,
 
@@ -28,4 +31,7 @@ pub enum DecoderError {
 
     #[error("string is not valid UTF-8")]
     StringInvalidUtf8,
+
+    #[error("expected dictionnary key to be string")]
+    DictionaryInvalidKeyType,
 }
