@@ -1,3 +1,11 @@
+/**
+ * CREDITS
+ *
+ * THIS CODE IS HEAVILY INSPIRED BY THIS AMAZING IMPLEMENTATION OF A BENCODE DECODER:
+ * https://github.com/denis-selimovic/bencode/blob/main/src/protocol/decode.rs
+ *
+ */
+
 #[cfg(test)]
 mod tests;
 
@@ -17,24 +25,23 @@ impl<'a, B: Iterator<Item = u8>> Decoder<'a, B> {
     }
 
     pub fn decode(&mut self) -> DecoderResult {
-        let result = match self.0.next() {
-            Some(head) => self.parse(head),
-            None => Err(DecoderError::Empty),
-        };
+        let head = self.0.next().ok_or(DecoderError::Empty)?;
+        let bencode = self.parse(head)?;
 
-        if result.is_err() {
-            return result;
+        if self.0.next().is_some() {
+            return Err(DecoderError::UnexpectedExtraData);
         }
 
-        match self.0.next() {
-            Some(_) => Err(DecoderError::UnexpectedExtraData),
-            None => result,
-        }
+        Ok(bencode)
     }
 
     fn parse(&mut self, head: u8) -> DecoderResult {
         match head {
             b'i' => self.parse_integer(),
+            b'0'..=b'9' => {
+                let len = self.parse_string_length(head)?;
+                self.parse_byte_string(len)
+            },
             _ => todo!(),
         }
     }
@@ -43,41 +50,71 @@ impl<'a, B: Iterator<Item = u8>> Decoder<'a, B> {
         let mut is_negative = false;
         let mut buff: Vec<u8> = vec![];
 
-        let head = match self.0.next() {
-            Some(head) => head,
-            None => return Err(DecoderError::InvalidIntegerSyntax),
-        };
-
-        if head.eq(&b'-') {
-            is_negative = true;
-        } else if head.ge(&b'0') && head.le(&b'9') {
-            buff.push(head);
-        } else {
-            return Err(DecoderError::InvalidIntegerSyntax);
+        let head = self.0.next().ok_or(DecoderError::InvalidIntegerSyntax)?;
+        match head {
+            b'-' => is_negative = true,
+            b'0'..=b'9' => buff.push(head),
+            _ => return Err(DecoderError::InvalidIntegerSyntax),
         }
 
+        let mut found_terminator = false;
         while let Some(byte) = self.0.next() {
             match byte {
-                b'e' => break,
+                b'e' => {
+                    found_terminator = true;
+                    break;
+                },
                 b'0'..=b'9' => buff.push(byte),
-                _ => return Err(DecoderError::InvalidByte("integer".to_string())),
+                _ => return Err(DecoderError::InvalidByte(byte)),
             }
+        }
+
+        if !found_terminator {
+            return Err(DecoderError::MissingTerminator);
+        }
+
+        if buff.is_empty() {
+            return Err(DecoderError::InvalidIntegerSyntax);
         }
 
         if buff.len() > 1 && buff[0] == b'0' {
             return Err(DecoderError::IntegerLeadingZero);
         }
 
-        let mut integer = util::bytes_to_integer(buff)?;
-        if integer.eq(&0) && is_negative {
-            return Err(DecoderError::IntegerNegativeZero);
-        }
+        let mut integer: i64 = util::bytes_to_integer(buff)?;
 
         if is_negative {
-            integer *= -1
-        };
+            if integer == 0 {
+                return Err(DecoderError::IntegerNegativeZero);
+            }
+
+            integer = integer.wrapping_neg();
+        }
 
         Ok(Bencode::Integer(integer))
+    }
+
+    fn parse_byte_string(&mut self, len: usize) -> DecoderResult {
+        let bytes = self.0.by_ref().take(len).collect::<Vec<u8>>();
+        if bytes.len() != len {
+            return Err(DecoderError::StringInvalidLength(len));
+        }
+
+        Ok(Bencode::String(bytes))
+    }
+
+    fn parse_string_length(&mut self, head: u8) -> Result<usize, DecoderError> {
+        let mut length = vec![head];
+
+        while let Some(byte) = self.0.next() {
+            match byte {
+                b':' => break,
+                b'0'..=b'9' => length.push(byte),
+                _ => return Err(DecoderError::InvalidByte(byte)),
+            }
+        }
+
+        util::bytes_to_integer(length)
     }
 }
 
