@@ -13,10 +13,10 @@ cargo run
 
 ### Credits
 
-Specifications:
-https://www.bittorrent.org/beps/bep_0000.html
-https://en.wikipedia.org/wiki/Torrent_file
+Specifications:  
+https://www.bittorrent.org/beps/bep_0000.html  
+https://en.wikipedia.org/wiki/Torrent_file  
 
-Thanks to these sources for the inspiration:
-https://github.com/denis-selimovic/bencode
-https://www.nayuki.io/res/bittorrent-bencode-format-tools/bencode.rs
+Thanks to these sources for the inspiration:  
+https://github.com/denis-selimovic/bencode  
+https://www.nayuki.io/res/bittorrent-bencode-format-tools/bencode.rs  

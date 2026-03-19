@@ -4,8 +4,8 @@ root = true
 insert_final_newline = true
 trim_trailing_whitespace = true
 
-# [*.md]
-# max_line_length = 78
+[*.md]
+trim_trailing_whitespace = false
 
 [*.rs]
 indent_style = space
