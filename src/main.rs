@@ -1,8 +1,10 @@
 use std::fs::File;
 use std::io::{BufReader, Read};
 
+use crate::metainfo::Metainfo;
 use crate::protocol::decoder::Decoder;
 
+mod metainfo;
 mod protocol;
 mod util;
 
@@ -18,5 +20,7 @@ fn main() {
     let mut bytes = reader.bytes().map(|c| c.unwrap());
     let mut decoder = Decoder::new(&mut bytes);
     let result = decoder.decode().unwrap();
-    println!("result: {}", result);
+    // println!("{result}");
+    let metainfo = Metainfo::try_from(result).unwrap();
+    println!("METAINFO: {:#?}", metainfo.info.piece_count());
 }

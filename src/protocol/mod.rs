@@ -3,7 +3,7 @@ use std::collections::BTreeMap;
 pub mod decoder;
 use std::fmt::{self, Write};
 
-#[derive(PartialEq)]
+#[derive(PartialEq, Clone)]
 pub enum Bencode {
     /// Integers are represented by an 'i' followed by the number in base 10 followed by an 'e'.
     /// For example i3e corresponds to 3 and i-3e corresponds to -3.
