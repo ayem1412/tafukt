@@ -1,11 +1,3 @@
-/**
- * CREDITS
- *
- * THIS CODE IS HEAVILY INSPIRED BY THIS AMAZING IMPLEMENTATION OF A BENCODE DECODER:
- * https://github.com/denis-selimovic/bencode/blob/main/src/protocol/decode.rs
- *
- */
-
 #[cfg(test)]
 mod tests;
 
