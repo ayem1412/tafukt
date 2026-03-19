@@ -15,12 +15,12 @@ fn main() {
         String::from_utf8_unchecked(include_bytes!("../torrents/716CDB3E77094135E601A83B555CBBB3EB1D9557.torrent").to_vec())
     }; */
 
-    let file = File::open("./torrents/archlinux-2026.03.01-x86_64.iso.torrent").unwrap();
+    let file = File::open("./torrents/716CDB3E77094135E601A83B555CBBB3EB1D9557.torrent").unwrap();
     let reader = BufReader::new(file);
     let mut bytes = reader.bytes().map(|c| c.unwrap());
     let mut decoder = Decoder::new(&mut bytes);
     let result = decoder.decode().unwrap();
     // println!("{result}");
     let metainfo = Metainfo::try_from(result).unwrap();
-    println!("METAINFO: {:#?}", metainfo.info.piece_count());
+    println!("METAINFO: {:?}", metainfo);
 }
