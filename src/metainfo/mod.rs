@@ -7,6 +7,7 @@ mod tests;
 
 mod error;
 mod info_dictionary;
+mod info_dictionary_file;
 mod util;
 
 /// Metainfo files (also known as .torrent files) are bencoded dictionaries.
