@@ -9,7 +9,8 @@ fn info_dictionary_success_single_file() {
     let mut info_dict = BTreeMap::new();
     info_dict.insert("name".to_string(), Bencode::String(b"test.iso".to_vec()));
     info_dict.insert("piece length".to_string(), Bencode::Integer(262144));
-    info_dict.insert("pieces".to_string(), Bencode::String(vec![0; 20])); // 1 piece
+    info_dict.insert("pieces".to_string(), Bencode::String(vec![0; 20]));
+    info_dict.insert("length".to_string(), Bencode::Integer(11111));
 
     let bencode = Bencode::Dictionary(info_dict);
     let result = InfoDictionary::try_from(bencode);
