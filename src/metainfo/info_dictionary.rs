@@ -1,7 +1,9 @@
 use crate::metainfo::error::MetainfoError;
+use crate::metainfo::info_dictionary_file::InfoDictionaryFile;
 use crate::metainfo::util;
 use crate::protocol::Bencode;
 
+/// Represents the `info` dictionary.
 #[derive(Debug)]
 pub struct InfoDictionary {
     /// The name key maps to a UTF-8 encoded string which is the suggested name to save the file (or
@@ -19,11 +21,33 @@ pub struct InfoDictionary {
     /// It is to be subdivided into strings of length 20,
     /// each of which is the SHA1 hash of the piece at the corresponding index.
     pieces: Vec<u8>,
+
+    /**
+     * There is also a key `length` or a key `files`, but not both or neither.
+     * If length is present then the download represents a single file,
+     * otherwise it represents a set of files which go in a directory structure.
+     */
+
+    /// The length of the file, in bytes.
+    /// In the single file case, length maps to the length of the file in bytes.
+    length: Option<u64>,
+
+    /// For the purposes of the other keys,
+    /// the multi-file case is treated as only having a single file by concatenating the files
+    /// in the order they appearin the files list.
+    /// The files list is the value files maps to.
+    files: Option<Vec<InfoDictionaryFile>>,
 }
 
 impl InfoDictionary {
-    pub fn new(name: String, piece_length: u64, pieces: Vec<u8>) -> Self {
-        Self { name, piece_length, pieces }
+    fn new(
+        name: String,
+        piece_length: u64,
+        pieces: Vec<u8>,
+        length: Option<u64>,
+        files: Option<Vec<InfoDictionaryFile>>,
+    ) -> Self {
+        Self { name, piece_length, pieces, length, files }
     }
 
     pub fn piece_count(&self) -> usize {
@@ -48,6 +72,13 @@ impl TryFrom<Bencode> for InfoDictionary {
             return Err(MetainfoError::InvalidPiecesLength);
         }
 
-        Ok(Self::new(name, piece_length, pieces))
+        let length = util::extract_optional_integer_from_dict(&dict, "length")?;
+        let files = util::extract_optional_list_from_dict(&dict, "files", InfoDictionaryFile::try_from)?;
+
+        if length.is_none() && files.as_ref().map_or(true, |files| files.is_empty()) {
+            return Err(MetainfoError::MissingFilesAndLength);
+        }
+
+        Ok(Self::new(name, piece_length, pieces, length, files))
     }
 }

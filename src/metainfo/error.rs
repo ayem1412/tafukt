@@ -19,4 +19,7 @@ pub enum MetainfoError {
 
     #[error("pieces length must be multiple of 20")]
     InvalidPiecesLength,
+
+    #[error("at least one these keys must be set: `files`, `length`")]
+    MissingFilesAndLength,
 }
