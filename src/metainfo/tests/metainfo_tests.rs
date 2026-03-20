@@ -13,6 +13,7 @@ fn metainfo_success_with_announce() {
     info_dict.insert("name".to_string(), Bencode::String(b"test.iso".to_vec()));
     info_dict.insert("piece length".to_string(), Bencode::Integer(262144));
     info_dict.insert("pieces".to_string(), Bencode::String(vec![0; 20]));
+    info_dict.insert("length".to_string(), Bencode::Integer(11111));
     top.insert("info".to_string(), Bencode::Dictionary(info_dict));
 
     let bencode = Bencode::Dictionary(top);
@@ -31,6 +32,7 @@ fn metainfo_success_without_announce_trackerless() {
     info_dict.insert("name".to_string(), Bencode::String(b"test.iso".to_vec()));
     info_dict.insert("piece length".to_string(), Bencode::Integer(262144));
     info_dict.insert("pieces".to_string(), Bencode::String(vec![0; 20]));
+    info_dict.insert("length".to_string(), Bencode::Integer(11111));
     top.insert("info".to_string(), Bencode::Dictionary(info_dict));
 
     let bencode = Bencode::Dictionary(top);
