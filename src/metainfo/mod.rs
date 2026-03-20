@@ -15,7 +15,7 @@ mod util;
 #[derive(Debug)]
 pub struct Metainfo {
     /// The URL of the tracker.
-    announce: Option<String>,
+    pub announce: Option<String>,
 
     /// This maps to a dictionary.
     pub info: InfoDictionary,
