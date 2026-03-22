@@ -54,7 +54,7 @@ impl<'a, B: Iterator<Item = u8>> Decoder<'a, B> {
         }
 
         let mut found_terminator = false;
-        while let Some(byte) = self.0.next() {
+        for byte in self.0.by_ref() {
             match byte {
                 b'e' => {
                     found_terminator = true;
@@ -102,7 +102,7 @@ impl<'a, B: Iterator<Item = u8>> Decoder<'a, B> {
     fn parse_string_length(&mut self, head: u8) -> Result<usize, DecoderError> {
         let mut length = vec![head];
 
-        while let Some(byte) = self.0.next() {
+        for byte in self.0.by_ref() {
             match byte {
                 b':' => break,
                 b'0'..=b'9' => length.push(byte),

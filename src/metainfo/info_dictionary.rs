@@ -1,7 +1,12 @@
+use std::collections::BTreeMap;
+
+use bytes::Bytes;
+use sha1::Digest;
+
 use crate::metainfo::error::MetainfoError;
 use crate::metainfo::info_dictionary_file::InfoDictionaryFile;
 use crate::metainfo::util;
-use crate::protocol::Bencode;
+use crate::protocol::{Bencode, encoder};
 
 /// Represents the `info` dictionary.
 #[derive(Debug)]
@@ -20,7 +25,7 @@ pub struct InfoDictionary {
     /// pieces maps to a string whose length is a multiple of 20.
     /// It is to be subdivided into strings of length 20,
     /// each of which is the SHA1 hash of the piece at the corresponding index.
-    pieces: Vec<u8>,
+    pieces: Bytes,
 
     /**
      * There is also a key `length` or a key `files`, but not both or neither.
@@ -43,7 +48,7 @@ impl InfoDictionary {
     fn new(
         name: String,
         piece_length: u64,
-        pieces: Vec<u8>,
+        pieces: Bytes,
         length: Option<u64>,
         files: Option<Vec<InfoDictionaryFile>>,
     ) -> Self {
@@ -52,6 +57,26 @@ impl InfoDictionary {
 
     pub fn piece_count(&self) -> usize {
         self.pieces.len() / 20
+    }
+
+    /// Calculates the `info_hash`.
+    pub fn info_hash(self) -> Result<Bytes, MetainfoError> {
+        let hash = Bytes::copy_from_slice(sha1::Sha1::digest(encoder::encode(&Bencode::from(self))).as_ref());
+        if hash.len() != 20 {
+            return Err(MetainfoError::InvalidInfoHashLength(hash.len()));
+        }
+
+        Ok(hash)
+    }
+
+    pub fn length(&self) -> u64 {
+        if let Some(length) = self.length {
+            length
+        } else if let Some(files) = &self.files {
+            files.iter().map(|file| file.length).sum()
+        } else {
+            0
+        }
     }
 }
 
@@ -75,10 +100,48 @@ impl TryFrom<Bencode> for InfoDictionary {
         let length = util::extract_optional_integer_from_dict(&dict, "length")?;
         let files = util::extract_optional_list_from_dict(&dict, "files", InfoDictionaryFile::try_from)?;
 
-        if length.is_none() && files.as_ref().map_or(true, |files| files.is_empty()) {
+        if length.is_none() && files.as_ref().is_none_or(|files| files.is_empty()) {
             return Err(MetainfoError::MissingFilesAndLength);
         }
 
-        Ok(Self::new(name, piece_length, pieces, length, files))
+        Ok(Self::new(name, piece_length, pieces.into(), length, files))
+    }
+}
+
+impl From<InfoDictionary> for Bencode {
+    fn from(value: InfoDictionary) -> Self {
+        let mut dict = BTreeMap::from([
+            ("name".into(), Bencode::String(value.name.into_bytes())),
+            ("piece length".into(), Bencode::Integer(value.piece_length as i64)),
+            ("pieces".into(), Bencode::String(value.pieces.to_vec())),
+        ]);
+
+        if let Some(length) = value.length {
+            dict.insert("length".into(), Bencode::Integer(length as i64));
+        } else if let Some(files) = value.files {
+            dict.insert(
+                "files".into(),
+                Bencode::List(
+                    files
+                        .into_iter()
+                        .map(|file| {
+                            let dict = BTreeMap::from([
+                                ("length".into(), Bencode::Integer(file.length as i64)),
+                                (
+                                    "path".into(),
+                                    Bencode::List(
+                                        file.path.into_iter().map(|path| Bencode::String(path.into_bytes())).collect(),
+                                    ),
+                                ),
+                            ]);
+
+                            Bencode::Dictionary(dict)
+                        })
+                        .collect(),
+                ),
+            );
+        };
+
+        Bencode::Dictionary(dict)
     }
 }

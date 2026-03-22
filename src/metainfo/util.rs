@@ -9,7 +9,7 @@ pub fn extract_optional_integer_from_dict<T: TryFrom<i64>>(
 ) -> Result<Option<T>, MetainfoError> {
     dict.get(key)
         .map(|bencode| match bencode {
-            Bencode::Integer(value) => value.clone().try_into().map_err(|_| MetainfoError::IntegerOverflow),
+            Bencode::Integer(value) => (*value).try_into().map_err(|_| MetainfoError::IntegerOverflow),
             _ => Err(MetainfoError::WrongValueType(key.into())),
         })
         .transpose()
@@ -105,7 +105,7 @@ pub fn extract_integer_from_dict<T: TryFrom<i64>>(
     key: &str,
 ) -> Result<T, MetainfoError> {
     match dict.get(key) {
-        Some(Bencode::Integer(value)) => value.clone().try_into().map_err(|_| MetainfoError::IntegerOverflow),
+        Some(Bencode::Integer(value)) => (*value).try_into().map_err(|_| MetainfoError::IntegerOverflow),
         Some(_) => Err(MetainfoError::WrongValueType(key.into())),
         None => Err(MetainfoError::MissingKey(key.into())),
     }

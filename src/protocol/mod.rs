@@ -1,6 +1,7 @@
 use std::collections::BTreeMap;
 
 pub mod decoder;
+pub mod encoder;
 use std::fmt::{self, Write};
 
 #[derive(PartialEq, Clone)]
@@ -24,6 +25,12 @@ pub enum Bencode {
     /// and d4:spaml1:a1:bee corresponds to {'spam': ['a', 'b']}.
     /// Keys must be strings and appear in sorted order (sorted as raw strings, not alphanumerics).
     Dictionary(BTreeMap<String, Self>),
+}
+
+impl From<&Bencode> for Vec<u8> {
+    fn from(val: &Bencode) -> Self {
+        encoder::encode(val)
+    }
 }
 
 impl fmt::Debug for Bencode {

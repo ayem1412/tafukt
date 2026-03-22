@@ -22,4 +22,7 @@ pub enum MetainfoError {
 
     #[error("at least one these keys must be set: `files`, `length`")]
     MissingFilesAndLength,
+
+    #[error("expected info hash length to be 20, received: {0}")]
+    InvalidInfoHashLength(usize),
 }

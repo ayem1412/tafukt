@@ -7,11 +7,11 @@ use crate::protocol::Bencode;
 #[derive(Debug)]
 pub struct InfoDictionaryFile {
     /// The length of the file, in bytes.
-    length: u64,
+    pub length: u64,
 
     /// A list of UTF-8 encoded strings corresponding to subdirectory names,
     /// the last of which is the actual file name (a zero length list is an error case).
-    path: Vec<String>,
+    pub path: Vec<String>,
 }
 
 impl InfoDictionaryFile {
@@ -35,3 +35,13 @@ impl TryFrom<Bencode> for InfoDictionaryFile {
         Ok(Self::new(length, path))
     }
 }
+
+/* impl Into<Bencode> for InfoDictionaryFile {
+    fn into(self) -> Bencode {
+        let dict = BTreeMap::from([
+            ("length".into(), Bencode::Integer(self.length as i64))
+        ]);
+
+        Bencode::Dictionary(dict)
+    }
+} */
