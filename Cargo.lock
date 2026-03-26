@@ -1190,7 +1190,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "tafunast"
+name = "tafukt"
 version = "0.1.3"
 dependencies = [
  "bytes",
