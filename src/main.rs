@@ -9,6 +9,7 @@ use crate::metainfo::Metainfo;
 use crate::protocol::decoder::Decoder;
 use crate::protocol::{Bencode, encoder};
 
+mod tracker;
 mod metainfo;
 mod protocol;
 
