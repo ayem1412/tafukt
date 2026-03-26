@@ -1,4 +1,5 @@
 # ⵜⴰⴼⵓⴽⵜ
+[![tafukt](https://github.com/ayem1412/tafukt/blob/fd5d7aeba65b7e49e191e1ea67114a21272f3585/assets/tafukt.jpg "tafukt")](https://en.wikipedia.org/wiki/Tafukt)
 
 Bittorrent client in rust
 
