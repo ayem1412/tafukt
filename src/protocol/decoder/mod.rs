@@ -6,7 +6,7 @@ use std::collections::BTreeMap;
 use crate::protocol::Bencode;
 use crate::protocol::decoder::error::DecoderError;
 
-mod error;
+pub mod error;
 mod util;
 
 pub struct Decoder<'a, B: Iterator<Item = u8>>(pub &'a mut B);
