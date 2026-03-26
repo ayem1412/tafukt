@@ -1,4 +1,5 @@
-# tafunast
+# ⵜⴰⴼⵓⴽⵜ
+
 Bittorrent client in rust
 
 ### Building
@@ -6,8 +7,8 @@ Bittorrent client in rust
 ```bash
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 
-git clone git@github.com:ayem1412/tafunast.git
-cd tafunast
+git clone git@github.com:ayem1412/tafukt.git
+cd tafukt
 cargo run
 ```
 
@@ -20,3 +21,4 @@ https://en.wikipedia.org/wiki/Torrent_file
 Thanks to these sources for the inspiration:  
 https://github.com/denis-selimovic/bencode  
 https://www.nayuki.io/res/bittorrent-bencode-format-tools/bencode.rs  
+https://codeberg.org/benjamingeer/sayaca  
