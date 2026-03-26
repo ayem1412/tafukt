@@ -17,6 +17,8 @@ pub enum Bencode {
     /// For example l4:spam4:eggse corresponds to ['spam', 'eggs'].
     List(Vec<Self>),
 
+    /// Strings are length-prefixed base ten followed by a colon and the string.
+    /// For example 4:spam corresponds to 'spam'.
     String(Vec<u8>),
 
     /// Dictionaries are encoded as a 'd' followed by a list of alternating keys and their
