@@ -1,9 +1,12 @@
 use std::fs::File;
 use std::hash::Hash;
 use std::io::{BufReader, Read};
+use std::net::SocketAddrV4;
 
 use reqwest::Url;
 use sha1::{Digest, Sha1};
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::net::TcpStream;
 
 use crate::metainfo::Metainfo;
 use crate::protocol::decoder::Decoder;
@@ -39,9 +42,33 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let length = metainfo.info.length();
     let info_hash = metainfo.info.info_hash().unwrap();
     // let hex = info_hash.into_iter().map(|b| format!("%{:02X}", b)).collect::<String>();
-    let tracker = Tracker::new("-PC0001-123456789012".into(), 6881, 0, 0, length, 1, metainfo.announce, info_hash);
-    let result = tracker.get().await?;
-    println!("{:#?}", result);
+    let tracker = Tracker::new(metainfo.announce, &info_hash);
+    let response = tracker.get("-PC0001-123456789012".into(), 6881, 0, 0, length, 1).await?;
+    let (ip, port) = response.peers[0];
+
+    println!("CONNECTING TO {ip}:{port}");
+    let mut stream = TcpStream::connect(SocketAddrV4::new(ip, port)).await.unwrap();
+
+    let info_hash: [u8; 20] = info_hash.as_ref().try_into().map_err(|_| "taz").unwrap();
+    println!("INFO HASH: {:02X?}", info_hash);
+
+    println!("HANDSHAKE");
+    let mut handshake = Vec::with_capacity(68);
+    handshake.push(19);
+    handshake.extend_from_slice(b"BitTorrent protocol");
+    handshake.extend_from_slice(&[0u8; 8]);
+    handshake.extend_from_slice(&info_hash);
+    handshake.extend_from_slice(b"-PC0001-123456789012");
+
+    println!("WRITING");
+
+    stream.write_all(&handshake).await.unwrap();
+    stream.flush().await.unwrap();
+
+    let mut response = [0u8; 68];
+    stream.read_exact(&mut response).await.unwrap();
+
+    println!("{}", String::from_utf8_lossy(&response));
 
     Ok(())
 }
