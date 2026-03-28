@@ -53,7 +53,7 @@ impl<'a> Tracker<'a> {
         .map_err(|err| TrackerError::UrlParse(err.to_string()))
     }
 
-    pub async fn get(
+    pub async fn get_peers(
         &self,
         peer_id: String,
         port: u16,
@@ -64,13 +64,8 @@ impl<'a> Tracker<'a> {
     ) -> Result<TrackerSuccessResponse, TrackerError> {
         let url = self.build_url(peer_id, port, uploaded, downloaded, left, compact)?;
         let res = self.http_client.get(url).send().await.map_err(TrackerError::RequestError)?;
-
-        if res.status() == StatusCode::OK {
-            let bytes = res.bytes().await.map_err(TrackerError::RequestError)?;
-            return decode_response(&bytes);
-        }
-
-        unimplemented!()
+        let bytes = res.bytes().await.map_err(TrackerError::RequestError)?;
+        decode_response(&bytes)
     }
 }
 
@@ -85,9 +80,14 @@ fn decode_response(bytes: &[u8]) -> Result<TrackerSuccessResponse, TrackerError>
         _ => return Err(TrackerError::WrongBencodeType("dict".into())),
     };
 
+    if let Some(Bencode::String(reason)) = dict.get("failure reason") {
+        return Err(TrackerError::ResponseFailure(String::from_utf8_lossy(reason).into()));
+    }
+
     let interval = match dict.get("interval") {
         Some(Bencode::Integer(value)) => *value as u64,
-        _ => return Err(TrackerError::WrongBencodeType("integer".into())),
+        Some(_) => return Err(TrackerError::WrongBencodeType("integer".into())),
+        None => return Err(TrackerError::ResponseKeyMissing("interval".into())),
     };
 
     // (IP, PORT)
@@ -101,7 +101,8 @@ fn decode_response(bytes: &[u8]) -> Result<TrackerSuccessResponse, TrackerError>
                 (ip, port)
             })
             .collect(),
-        _ => vec![],
+        Some(_) => return Err(TrackerError::WrongBencodeType("string".into())),
+        None => return Err(TrackerError::ResponseKeyMissing("peers".into())),
     };
 
     Ok(TrackerSuccessResponse::new(interval, peers))

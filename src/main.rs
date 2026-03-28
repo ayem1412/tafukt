@@ -9,11 +9,13 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
 
 use crate::metainfo::Metainfo;
+use crate::peer::Peer;
 use crate::protocol::decoder::Decoder;
 use crate::protocol::{Bencode, encoder};
 use crate::tracker::Tracker;
 
 mod metainfo;
+mod peer;
 mod protocol;
 mod tracker;
 
@@ -43,32 +45,22 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let info_hash = metainfo.info.info_hash().unwrap();
     // let hex = info_hash.into_iter().map(|b| format!("%{:02X}", b)).collect::<String>();
     let tracker = Tracker::new(metainfo.announce, &info_hash);
-    let response = tracker.get("-PC0001-123456789012".into(), 6881, 0, 0, length, 1).await?;
-    let (ip, port) = response.peers[0];
+    let response = tracker.get_peers("-PC0001-123456789012".into(), 6881, 0, 0, length, 1).await?;
 
-    println!("CONNECTING TO {ip}:{port}");
-    let mut stream = TcpStream::connect(SocketAddrV4::new(ip, port)).await.unwrap();
+    for (ip, port) in response.peers {
+        let peer = Peer::new(ip, port);
 
-    let info_hash: [u8; 20] = info_hash.as_ref().try_into().map_err(|_| "taz").unwrap();
-    println!("INFO HASH: {:02X?}", info_hash);
+        match peer.connect().await {
+            Ok(mut stream) => {
+                let info_hash: [u8; 20] = info_hash.as_ref().try_into()?;
 
-    println!("HANDSHAKE");
-    let mut handshake = Vec::with_capacity(68);
-    handshake.push(19);
-    handshake.extend_from_slice(b"BitTorrent protocol");
-    handshake.extend_from_slice(&[0u8; 8]);
-    handshake.extend_from_slice(&info_hash);
-    handshake.extend_from_slice(b"-PC0001-123456789012");
-
-    println!("WRITING");
-
-    stream.write_all(&handshake).await.unwrap();
-    stream.flush().await.unwrap();
-
-    let mut response = [0u8; 68];
-    stream.read_exact(&mut response).await.unwrap();
-
-    println!("{}", String::from_utf8_lossy(&response));
+                let _ = peer.handshake(&mut stream, info_hash, "-PC0001-123456789012").await;
+            },
+            Err(err) => {
+                eprintln!("Peer {} failed: {}", peer.addr(), err)
+            },
+        };
+    }
 
     Ok(())
 }
