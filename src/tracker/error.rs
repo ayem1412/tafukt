@@ -22,6 +22,12 @@ pub enum TrackerError {
     #[error("expected {0}")]
     WrongBencodeType(String),
 
+    #[error("missing {0} from response")]
+    ResponseKeyMissing(String),
+
+    #[error("response returned failure: {0}")]
+    ResponseFailure(String),
+
     #[error("response is invalid")]
     InvalidResponse,
 }
