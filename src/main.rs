@@ -10,6 +10,7 @@ use tokio::net::TcpStream;
 
 use crate::metainfo::Metainfo;
 use crate::peer::Peer;
+use crate::peer::peer_message::Message;
 use crate::protocol::decoder::Decoder;
 use crate::protocol::{Bencode, encoder};
 use crate::tracker::Tracker;
@@ -39,12 +40,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // println!("{result}");
     let metainfo = Metainfo::try_from(result).unwrap();
     // println!("{}", Into::<Bencode>::into(metainfo.info));
-    // println!("{:#?}", metainfo.info.);
 
+    let name = metainfo.info.name.clone();
     let length = metainfo.info.length();
-    let info_hash = metainfo.info.info_hash().unwrap();
+    let piece_count = metainfo.info.piece_count();
+    let info_hash = metainfo.info.info_hash().as_ref().unwrap();
     // let hex = info_hash.into_iter().map(|b| format!("%{:02X}", b)).collect::<String>();
-    let tracker = Tracker::new(metainfo.announce, &info_hash);
+    let tracker = Tracker::new(metainfo.announce, info_hash);
     let response = tracker.get_peers("-PC0001-123456789012".into(), 6881, 0, 0, length, 1).await?;
 
     for (ip, port) in response.peers {
@@ -54,7 +56,66 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             Ok(mut stream) => {
                 let info_hash: [u8; 20] = info_hash.as_ref().try_into()?;
 
-                let _ = peer.handshake(&mut stream, info_hash, "-PC0001-123456789012").await;
+                match peer.handshake(&mut stream, info_hash, "-PC0001-123456789012").await {
+                    Ok(()) => {
+                        peer.bitfield(&mut stream, piece_count).await?;
+                        peer.interested(&mut stream).await?;
+                        peer.unchoke(&mut stream).await?;
+
+                        println!("READING MESSAGES");
+
+                        let mut current_piece = 0u32;
+                        let mut current_offset = 0u32;
+                        const MAX_LENGTH: u32 = 16384;
+
+                        loop {
+                            match peer.read_message(&mut stream).await {
+                                Ok(Some(peer_message)) => match peer_message.id {
+                                    Message::Bitfield => {
+                                        println!("RECEIVED BITFIELD ({} bytes)", peer_message.payload.len());
+
+                                        peer.request(&mut stream, 0, 0, MAX_LENGTH).await?;
+                                    },
+                                    Message::Piece => {
+                                        println!("PIECE");
+                                        let piece = peer.piece(peer_message.payload).await?;
+                                        println!("RECEIVED PIECE: {:?}", piece);
+
+                                        println!("WRITING BLOCK");
+
+                                        piece.save_block_to_disk(length, name.as_str()).await?;
+
+                                        println!("BLOCK WRITTEN");
+
+                                        current_offset += MAX_LENGTH;
+
+                                        if current_offset as u64 >= length {
+                                            current_piece += 1;
+                                            current_offset = 0;
+                                        }
+
+                                        println!("LENGTH: {length} CURRENT OFFSET: {current_offset}");
+
+                                        if current_piece < piece_count as u32 {
+                                            println!("CURRENT PIECE: {current_piece} PIECE COUNT: {piece_count}");
+                                            peer.request(&mut stream, current_piece, current_offset, MAX_LENGTH)
+                                                .await?;
+                                        } else {
+                                            break;
+                                        }
+                                    },
+                                    _ => println!("RECEIVED: {:#?}", peer_message.id),
+                                },
+                                Ok(None) => println!("RECEIVED KEEPALIVE"),
+                                Err(err) => {
+                                    eprintln!("ERROR {err}");
+                                    break;
+                                },
+                            }
+                        }
+                    },
+                    Err(err) => eprintln!("HANDSHAKE ERROR {err}"),
+                };
             },
             Err(err) => {
                 eprintln!("Peer {} failed: {}", peer.addr(), err)

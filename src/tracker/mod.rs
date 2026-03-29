@@ -1,8 +1,7 @@
 use std::net::Ipv4Addr;
-use std::vec;
 
 use bytes::Bytes;
-use reqwest::{Client, StatusCode, Url};
+use reqwest::{Client, Url, header};
 
 use crate::protocol::Bencode;
 use crate::protocol::decoder::Decoder;
@@ -62,8 +61,16 @@ impl<'a> Tracker<'a> {
         left: u64,
         compact: u8,
     ) -> Result<TrackerSuccessResponse, TrackerError> {
+        const BITTORRENT_MIME_TYPE: &str = "application/x-bittorrent";
+
         let url = self.build_url(peer_id, port, uploaded, downloaded, left, compact)?;
-        let res = self.http_client.get(url).send().await.map_err(TrackerError::RequestError)?;
+        let res = self
+            .http_client
+            .get(url)
+            .header(header::ACCEPT, BITTORRENT_MIME_TYPE)
+            .send()
+            .await
+            .map_err(TrackerError::RequestError)?;
         let bytes = res.bytes().await.map_err(TrackerError::RequestError)?;
         decode_response(&bytes)
     }
