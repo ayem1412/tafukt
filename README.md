@@ -23,3 +23,4 @@ Thanks to these sources for the inspiration:
 https://github.com/denis-selimovic/bencode  
 https://www.nayuki.io/res/bittorrent-bencode-format-tools/bencode.rs  
 https://codeberg.org/benjamingeer/sayaca  
+https://blog.jse.li/posts/torrent/  

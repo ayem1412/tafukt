@@ -1,4 +1,5 @@
 use std::collections::BTreeMap;
+use std::sync::OnceLock;
 
 use bytes::Bytes;
 use sha1::Digest;
@@ -7,6 +8,8 @@ use crate::metainfo::error::MetainfoError;
 use crate::metainfo::info_dictionary_file::InfoDictionaryFile;
 use crate::metainfo::util;
 use crate::protocol::{Bencode, encoder};
+
+static INFO_HASH: OnceLock<Result<Bytes, MetainfoError>> = OnceLock::new();
 
 /// Represents the `info` dictionary.
 #[derive(Debug)]
@@ -60,15 +63,19 @@ impl InfoDictionary {
     }
 
     /// Calculates the `info_hash`.
-    pub fn info_hash(self) -> Result<Bytes, MetainfoError> {
-        let hash = Bytes::copy_from_slice(sha1::Sha1::digest(encoder::encode(&Bencode::from(self))).as_ref());
-        if hash.len() != 20 {
-            return Err(MetainfoError::InvalidInfoHashLength(hash.len()));
-        }
+    pub fn info_hash(self) -> &'static Result<Bytes, MetainfoError> {
+        INFO_HASH.get_or_init(|| {
+            let hash = Bytes::copy_from_slice(sha1::Sha1::digest(encoder::encode(&Bencode::from(self))).as_ref());
+            if hash.len() != 20 {
+                return Err(MetainfoError::InvalidInfoHashLength(hash.len()));
+            }
 
-        Ok(hash)
+            Ok(hash)
+        })
     }
 
+    /// The length of the file, in bytes.
+    /// In the single file case, length maps to the length of the file in bytes.
     pub fn length(&self) -> u64 {
         if let Some(length) = self.length {
             length
