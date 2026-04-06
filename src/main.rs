@@ -1,16 +1,20 @@
+use std::collections::HashSet;
 use std::fs::File;
 use std::hash::Hash;
 use std::io::{BufReader, Read};
-use std::net::SocketAddrV4;
+use std::net::{SocketAddr, SocketAddrV4};
+use std::time::Duration;
 
 use reqwest::Url;
 use sha1::{Digest, Sha1};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
+use tokio::sync::mpsc;
+use tokio::time::timeout;
 use tracing::Level;
 
 use crate::metainfo::Metainfo;
-use crate::peer::Peer;
+use crate::peer::PeerSession;
 use crate::peer::message::Message;
 use crate::protocol::decoder::Decoder;
 use crate::protocol::{Bencode, encoder};
@@ -20,6 +24,7 @@ mod metainfo;
 mod peer;
 mod protocol;
 mod tracker;
+mod util;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -46,13 +51,34 @@ async fn main() -> anyhow::Result<()> {
     let name = metainfo.info.name.clone();
     let length = metainfo.info.length();
     let piece_count = metainfo.info.piece_count();
-    let info_hash = metainfo.info.info_hash().as_ref().unwrap();
+    let info_hash = metainfo.info.info_hash().as_ref().unwrap().as_ref();
     // let hex = info_hash.into_iter().map(|b| format!("%{:02X}", b)).collect::<String>();
-    let tracker = Tracker::new(metainfo.announce, info_hash);
-    let response = tracker.get_peers("-PC0001-123456789012".into(), 6881, 0, 0, length, 1).await?;
+    let tracker = Tracker::new(metainfo.announce, info_hash.try_into()?);
+    let (peers_tx, mut peers_rx) = mpsc::channel::<Vec<SocketAddr>>(32);
 
-    for (ip, port) in response.peers {
-        let peer = Peer::new(ip, port);
+    let peer_id = util::generate_peer_id();
+    tokio::spawn(async move { tracker.announce_loop(&peer_id, 6881, peers_tx).await });
+
+    let mut peers = HashSet::new();
+    while let Some(addresses) = peers_rx.recv().await {
+        for address in addresses {
+            tracing::debug!("RECEIVED PEER: {address}");
+
+            if peers.insert(address) {
+                tracing::debug!("CONNECTING TO {address}");
+
+                tokio::spawn(async move {
+                    let stream = timeout(Duration::from_secs(10), TcpStream::connect(address)).await.unwrap().unwrap();
+                    let mut peer_session = PeerSession::new(address, stream);
+                    tracing::debug!("HANDSHAKE WITH {address}");
+                    peer_session.handshake(info_hash.try_into().unwrap(), &peer_id).await.unwrap();
+                });
+            }
+        }
+    }
+
+    /* for (ip, port) in response.peers {
+        let peer = PeerSession::new(ip, port);
 
         match peer.connect().await {
             Ok(mut stream) => {
@@ -123,7 +149,7 @@ async fn main() -> anyhow::Result<()> {
                 eprintln!("Peer {} failed: {}", peer.addr(), err)
             },
         };
-    }
+    } */
 
     Ok(())
 }
