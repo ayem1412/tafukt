@@ -7,10 +7,11 @@ use reqwest::Url;
 use sha1::{Digest, Sha1};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
+use tracing::Level;
 
 use crate::metainfo::Metainfo;
 use crate::peer::Peer;
-use crate::peer::peer_message::Message;
+use crate::peer::message::Message;
 use crate::protocol::decoder::Decoder;
 use crate::protocol::{Bencode, encoder};
 use crate::tracker::Tracker;
@@ -21,7 +22,8 @@ mod protocol;
 mod tracker;
 
 #[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
+async fn main() -> anyhow::Result<()> {
+    tracing_subscriber::fmt().with_max_level(Level::DEBUG).init();
     /* let invalid_string = unsafe {
         // archlinux-2026.03.01-x86_64.iso.torrent
         // 716CDB3E77094135E601A83B555CBBB3EB1D9557.torrent

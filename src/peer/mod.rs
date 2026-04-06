@@ -4,11 +4,11 @@ use tokio::io::{self, AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
 use tokio::time::{Duration, timeout};
 
-use crate::peer::peer_message::{Message, PeerMessage};
+use crate::peer::message::Message;
 use crate::peer::piece::Piece;
 
 mod bitfield;
-pub mod peer_message;
+pub mod message;
 mod piece;
 
 #[derive(Debug)]
