@@ -25,6 +25,7 @@ mod peer;
 mod protocol;
 mod tracker;
 mod util;
+mod orchestrator;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -62,15 +63,10 @@ async fn main() -> anyhow::Result<()> {
     let mut peers = HashSet::new();
     while let Some(addresses) = peers_rx.recv().await {
         for address in addresses {
-            tracing::debug!("RECEIVED PEER: {address}");
-
             if peers.insert(address) {
-                tracing::debug!("CONNECTING TO {address}");
-
                 tokio::spawn(async move {
                     let stream = timeout(Duration::from_secs(10), TcpStream::connect(address)).await.unwrap().unwrap();
                     let mut peer_session = PeerSession::new(address, stream);
-                    tracing::debug!("HANDSHAKE WITH {address}");
                     peer_session.handshake(info_hash.try_into().unwrap(), &peer_id).await.unwrap();
                 });
             }

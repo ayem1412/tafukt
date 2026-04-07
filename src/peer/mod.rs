@@ -1,8 +1,11 @@
 use std::net::SocketAddr;
 
+use bytes::BytesMut;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
 use tokio::time::{Duration, timeout};
+
+use crate::peer::message::Message;
 
 mod bitfield;
 pub mod message;
@@ -14,11 +17,14 @@ const BITTORRENT_PROTOCOL: &str = "BitTorrent protocol";
 pub struct PeerSession {
     address: SocketAddr,
     stream: TcpStream,
+    peer_choking_us: bool,
+    we_choking_peer: bool,
+    we_interested: bool,
 }
 
 impl PeerSession {
     pub fn new(address: SocketAddr, stream: TcpStream) -> Self {
-        Self { address, stream }
+        Self { address, stream, peer_choking_us: true, we_choking_peer: true, we_interested: false }
     }
 
     pub async fn handshake(&mut self, info_hash: [u8; 20], peer_id: &[u8; 20]) -> anyhow::Result<()> {
@@ -56,6 +62,53 @@ impl PeerSession {
         }
 
         tracing::debug!("handshake successful");
+
+        Ok(())
+    }
+
+    async fn process_messages(&mut self, buf: &mut BytesMut) -> anyhow::Result<()> {
+        while let Some(message) = Message::decode(buf) {
+            self.handle_message(message).await?;
+        }
+
+        Ok(())
+    }
+
+    async fn handle_message(&mut self, message: Message) -> anyhow::Result<()> {
+        match message {
+            Message::Choke => {
+                tracing::debug!("Peer choked us: {}", self.address);
+                self.peer_choking_us = true;
+            },
+            Message::Unchoke => {
+                tracing::debug!("Peer unchoked us: {}", self.address);
+                self.peer_choking_us = false;
+            },
+            Message::Bitfield(items) => todo!(),
+            Message::Request { index, begin, length } => todo!(),
+            Message::Piece { index, begin, data } => todo!(),
+            Message::KeepAlive | Message::Interested | Message::NotInterested => {},
+        }
+
+        Ok(())
+    }
+
+    pub async fn run(&mut self) -> anyhow::Result<()> {
+        let mut buf = BytesMut::with_capacity(64 * 1024);
+
+        loop {
+            tokio::select! {
+                result = self.stream.read_buf(&mut buf) => {
+                    let n = result?;
+                    if n == 0 {
+                        tracing::warn!("Peer {} disconnected", self.address);
+                        break;
+                    }
+
+                    self.process_messages(&mut buf).await?;
+                }
+            }
+        }
 
         Ok(())
     }
