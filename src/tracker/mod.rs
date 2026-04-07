@@ -2,7 +2,6 @@ use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4};
 use std::thread::sleep;
 use std::time::Duration;
 
-use bytes::Bytes;
 use reqwest::{Client, Url, header};
 use tokio::sync::mpsc;
 
@@ -16,14 +15,14 @@ mod response;
 
 const BITTORRENT_MIME_TYPE: &str = "application/x-bittorrent";
 
-pub struct Tracker<'a> {
-    announce: Option<String>,
-    info_hash: &'a [u8; 20],
+pub struct Tracker {
+    announce: String,
+    info_hash: [u8; 20],
     http_client: Client,
 }
 
-impl<'a> Tracker<'a> {
-    pub fn new(announce: Option<String>, info_hash: &'a [u8; 20]) -> Self {
+impl Tracker {
+    pub fn new(announce: String, info_hash: [u8; 20]) -> Self {
         Self { announce, info_hash, http_client: reqwest::Client::new() }
     }
 
@@ -38,11 +37,10 @@ impl<'a> Tracker<'a> {
     ) -> Result<Url, TrackerError> {
         // reqwest can't parse binary values :(((((
         // https://github.com/seanmonstar/reqwest/issues/1613
-        let announce = self.announce.as_ref().ok_or(TrackerError::NoAnnounce)?;
         let peer_id = urlencoding::encode_binary(peer_id);
-        let info_hash = urlencoding::encode_binary(self.info_hash);
+        let info_hash = urlencoding::encode_binary(&self.info_hash);
 
-        let base_url = format!("{announce}?peer_id={peer_id}&info_hash={info_hash}");
+        let base_url = format!("{}?peer_id={peer_id}&info_hash={info_hash}", self.announce);
 
         Url::parse_with_params(
             &base_url,

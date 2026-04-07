@@ -1,30 +1,48 @@
 use std::net::SocketAddr;
+use std::sync::Arc;
 
 use bytes::BytesMut;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
+use tokio::sync::Mutex;
 use tokio::time::{Duration, timeout};
 
+use crate::peer::bitfield::Bitfield;
 use crate::peer::message::Message;
+use crate::piece_picker::PiecePicker;
 
-mod bitfield;
+pub mod bitfield;
 pub mod message;
 mod piece;
 
 const BITTORRENT_PROTOCOL: &str = "BitTorrent protocol";
 
-#[derive(Debug)]
 pub struct PeerSession {
     address: SocketAddr,
     stream: TcpStream,
+    peer_bitfield: Bitfield,
     peer_choking_us: bool,
     we_choking_peer: bool,
     we_interested: bool,
+    piece_picker: Arc<Mutex<PiecePicker>>,
 }
 
 impl PeerSession {
-    pub fn new(address: SocketAddr, stream: TcpStream) -> Self {
-        Self { address, stream, peer_choking_us: true, we_choking_peer: true, we_interested: false }
+    pub fn new(
+        address: SocketAddr,
+        stream: TcpStream,
+        piece_count: usize,
+        piece_picker: Arc<Mutex<PiecePicker>>,
+    ) -> Self {
+        Self {
+            address,
+            stream,
+            peer_bitfield: Bitfield::new(piece_count),
+            peer_choking_us: true,
+            we_choking_peer: true,
+            we_interested: false,
+            piece_picker,
+        }
     }
 
     pub async fn handshake(&mut self, info_hash: [u8; 20], peer_id: &[u8; 20]) -> anyhow::Result<()> {
@@ -84,10 +102,33 @@ impl PeerSession {
                 tracing::debug!("Peer unchoked us: {}", self.address);
                 self.peer_choking_us = false;
             },
-            Message::Bitfield(items) => todo!(),
+            Message::Bitfield(data) => {
+                self.peer_bitfield = Bitfield::from_bytes(data, self.peer_bitfield.piece_count);
+                tracing::debug!("Received bitfield: {:?}", self.peer_bitfield);
+                self.piece_picker.lock().await.register_peer_bitfield(&self.peer_bitfield);
+                self.send_interested_if_useful().await?;
+            },
             Message::Request { index, begin, length } => todo!(),
             Message::Piece { index, begin, data } => todo!(),
             Message::KeepAlive | Message::Interested | Message::NotInterested => {},
+        }
+
+        Ok(())
+    }
+
+    async fn send_interested_if_useful(&mut self) -> anyhow::Result<()> {
+        if self.we_interested {
+            return Ok(());
+        }
+        let is_useful = {
+            let piece_picker = self.piece_picker.lock().await;
+            piece_picker.our_bitfield.our_missing_pieces(&self.peer_bitfield).next().is_some()
+        };
+
+        if is_useful {
+            self.stream.write_all(&Message::Interested.encode()).await?;
+            self.we_interested = true;
+            tracing::debug!("Sent interested to {}", self.address);
         }
 
         Ok(())

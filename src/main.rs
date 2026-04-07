@@ -14,6 +14,7 @@ use tokio::time::timeout;
 use tracing::Level;
 
 use crate::metainfo::Metainfo;
+use crate::orchestrator::Orchestrator;
 use crate::peer::PeerSession;
 use crate::peer::message::Message;
 use crate::protocol::decoder::Decoder;
@@ -21,11 +22,12 @@ use crate::protocol::{Bencode, encoder};
 use crate::tracker::Tracker;
 
 mod metainfo;
+mod orchestrator;
 mod peer;
+mod piece_picker;
 mod protocol;
 mod tracker;
 mod util;
-mod orchestrator;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -49,29 +51,16 @@ async fn main() -> anyhow::Result<()> {
     let metainfo = Metainfo::try_from(result).unwrap();
     // println!("{}", Into::<Bencode>::into(metainfo.info));
 
-    let name = metainfo.info.name.clone();
-    let length = metainfo.info.length();
-    let piece_count = metainfo.info.piece_count();
-    let info_hash = metainfo.info.info_hash().as_ref().unwrap().as_ref();
+    let info = metainfo.info;
+    let announce = metainfo.announce.unwrap();
+    let name = info.name.clone();
+    let length = info.length();
+    let piece_count = info.piece_count();
+    let info_hash = info.info_hash().as_ref().unwrap().as_ref();
     // let hex = info_hash.into_iter().map(|b| format!("%{:02X}", b)).collect::<String>();
-    let tracker = Tracker::new(metainfo.announce, info_hash.try_into()?);
-    let (peers_tx, mut peers_rx) = mpsc::channel::<Vec<SocketAddr>>(32);
 
     let peer_id = util::generate_peer_id();
-    tokio::spawn(async move { tracker.announce_loop(&peer_id, 6881, peers_tx).await });
-
-    let mut peers = HashSet::new();
-    while let Some(addresses) = peers_rx.recv().await {
-        for address in addresses {
-            if peers.insert(address) {
-                tokio::spawn(async move {
-                    let stream = timeout(Duration::from_secs(10), TcpStream::connect(address)).await.unwrap().unwrap();
-                    let mut peer_session = PeerSession::new(address, stream);
-                    peer_session.handshake(info_hash.try_into().unwrap(), &peer_id).await.unwrap();
-                });
-            }
-        }
-    }
+    Orchestrator::new(announce, peer_id, info_hash.try_into().unwrap(), piece_count).run().await;
 
     /* for (ip, port) in response.peers {
         let peer = PeerSession::new(ip, port);
