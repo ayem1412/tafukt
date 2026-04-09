@@ -16,15 +16,23 @@ impl Bitfield {
         Self { data: BitVec::from_vec(data), piece_count }
     }
 
-    pub fn has_piece(&self, index: usize) -> bool {
+    pub fn as_bytes(&self) -> &[u8] {
+        self.data.as_raw_slice()
+    }
+
+    pub fn has(&self, index: usize) -> bool {
         self.data.get(index).map(|b| *b).unwrap_or(false)
     }
 
-    pub fn set_piece(&mut self, index: usize) {
+    pub fn set(&mut self, index: usize) {
         self.data.set(index, true);
     }
 
-    pub fn our_missing_pieces(&self, peer_bitfield: &Bitfield) -> impl Iterator<Item = usize> {
-        (0..self.piece_count).filter(|&index| !self.has_piece(index) && peer_bitfield.has_piece(index))
+    pub fn missing(&self, peer_bitfield: &Bitfield) -> impl Iterator<Item = usize> {
+        (0..self.piece_count).filter(|&index| !self.has(index) && peer_bitfield.has(index))
+    }
+
+    pub fn is_complete(&self) -> bool {
+        self.data.all()
     }
 }

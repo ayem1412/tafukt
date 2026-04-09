@@ -1,33 +1,25 @@
 use std::collections::HashSet;
-use std::fs::File;
-use std::hash::Hash;
-use std::io::{BufReader, Read};
-use std::net::{SocketAddr, SocketAddrV4};
+use std::sync::Arc;
 use std::time::Duration;
 
-use reqwest::Url;
-use sha1::{Digest, Sha1};
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
-use tokio::sync::mpsc;
+use tokio::sync::{RwLock, mpsc};
 use tokio::time::timeout;
 use tracing::Level;
 
 use crate::metainfo::Metainfo;
-use crate::orchestrator::Orchestrator;
-use crate::peer::PeerSession;
-use crate::peer::message::Message;
+use crate::peer::handshake;
 use crate::protocol::decoder::Decoder;
-use crate::protocol::{Bencode, encoder};
-use crate::tracker::Tracker;
 
 mod metainfo;
-mod orchestrator;
 mod peer;
-mod piece_picker;
+mod piece;
 mod protocol;
 mod tracker;
 mod util;
+
+const MAX_PEERS: u8 = 50;
+const CONNECTION_TIMEOUT: Duration = Duration::from_secs(10);
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -47,94 +39,68 @@ async fn main() -> anyhow::Result<()> {
     let mut decoder = Decoder::new(&mut bytes);
     let result = decoder.decode().unwrap();
 
-    // println!("{result}");
-    let metainfo = Metainfo::try_from(result).unwrap();
-    // println!("{}", Into::<Bencode>::into(metainfo.info));
+    let metainfo = Metainfo::try_from(result)?;
 
     let info = metainfo.info;
-    let announce = metainfo.announce.unwrap();
+
     let name = info.name.clone();
     let length = info.length();
+    let piece_length = info.piece_length;
     let piece_count = info.piece_count();
-    let info_hash = info.info_hash().as_ref().unwrap().as_ref();
-    // let hex = info_hash.into_iter().map(|b| format!("%{:02X}", b)).collect::<String>();
 
+    tracing::debug!("Torrent {name} ({piece_count} pieces x {piece_length} bytes = {length} bytes total)");
+
+    let announce_url = metainfo.announce.unwrap();
+    let info_hash = info.info_hash().as_ref().unwrap().as_ref().try_into().unwrap();
     let peer_id = util::generate_peer_id();
-    Orchestrator::new(announce, peer_id, info_hash.try_into().unwrap(), piece_count).run().await;
 
-    /* for (ip, port) in response.peers {
-        let peer = PeerSession::new(ip, port);
+    let (peers_tx, mut peers_rx) = mpsc::channel(32);
+    tokio::spawn(async move {
+        tracker::announce_loop(&announce_url, info_hash, &peer_id, length, peers_tx).await;
+    });
 
-        match peer.connect().await {
-            Ok(mut stream) => {
-                let info_hash: [u8; 20] = info_hash.as_ref().try_into()?;
+    // let mut valid_peers = Arc::new(RwLock::new(HashSet::new()));
+    let mut active_peers = 0;
 
-                match peer.handshake(&mut stream, info_hash, "-PC0001-123456789012").await {
-                    Ok(()) => {
-                        peer.bitfield(&mut stream, piece_count).await?;
-                        peer.interested(&mut stream).await?;
-                        peer.unchoke(&mut stream).await?;
+    while let Some(peers) = peers_rx.recv().await {
+        for peer in peers {
+            tracing::debug!("Received peer: {peer}");
 
-                        println!("READING MESSAGES");
+            if active_peers >= MAX_PEERS {
+                tracing::warn!("At peer limit ({MAX_PEERS}), skipping ({peer})");
+                continue;
+            }
 
-                        let mut current_piece = 0u32;
-                        let mut current_offset = 0u32;
-                        const MAX_LENGTH: u32 = 16384;
+            active_peers += 1;
 
-                        loop {
-                            match peer.read_message(&mut stream).await {
-                                Ok(Some(peer_message)) => match peer_message.id {
-                                    Message::Bitfield => {
-                                        println!("RECEIVED BITFIELD ({} bytes)", peer_message.payload.len());
-
-                                        peer.request(&mut stream, 0, 0, MAX_LENGTH).await?;
-                                    },
-                                    Message::Piece => {
-                                        println!("PIECE");
-                                        let piece = peer.piece(peer_message.payload).await?;
-                                        println!("RECEIVED PIECE: {:?}", piece);
-
-                                        println!("WRITING BLOCK");
-
-                                        piece.save_block_to_disk(length, name.as_str()).await?;
-
-                                        println!("BLOCK WRITTEN");
-
-                                        current_offset += MAX_LENGTH;
-
-                                        if current_offset as u64 >= length {
-                                            current_piece += 1;
-                                            current_offset = 0;
-                                        }
-
-                                        println!("LENGTH: {length} CURRENT OFFSET: {current_offset}");
-
-                                        if current_piece < piece_count as u32 {
-                                            println!("CURRENT PIECE: {current_piece} PIECE COUNT: {piece_count}");
-                                            peer.request(&mut stream, current_piece, current_offset, MAX_LENGTH)
-                                                .await?;
-                                        } else {
-                                            break;
-                                        }
-                                    },
-                                    _ => println!("RECEIVED: {:#?}", peer_message.id),
-                                },
-                                Ok(None) => println!("RECEIVED KEEPALIVE"),
-                                Err(err) => {
-                                    eprintln!("ERROR {err}");
-                                    break;
-                                },
-                            }
-                        }
+            tokio::spawn(async move {
+                let mut stream = match timeout(CONNECTION_TIMEOUT, TcpStream::connect(peer)).await {
+                    Ok(Ok(stream)) => stream,
+                    Ok(Err(err)) => {
+                        tracing::error!("Failed to connect to {peer}: {err}");
+                        return;
                     },
-                    Err(err) => eprintln!("HANDSHAKE ERROR {err}"),
+                    Err(_) => {
+                        tracing::error!("Timeout connecting to {peer}");
+                        return;
+                    },
                 };
-            },
-            Err(err) => {
-                eprintln!("Peer {} failed: {}", peer.addr(), err)
-            },
-        };
-    } */
+
+                tracing::debug!("TCP connected to {peer}");
+
+                match handshake::perform(&mut stream, info_hash, &peer_id).await {
+                    Ok(()) => {
+                        tracing::debug!("Handshake successful with {peer}");
+                    },
+                    Err(err) => {
+                        tracing::error!("Failed to perform handshake with {peer}: {err}");
+                    },
+                }
+            });
+        }
+    }
+
+    tokio::signal::ctrl_c().await.ok();
 
     Ok(())
 }

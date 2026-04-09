@@ -1,3 +1,4 @@
+use std::collections::{HashSet, VecDeque};
 use std::net::SocketAddr;
 use std::sync::Arc;
 
@@ -5,17 +6,26 @@ use bytes::BytesMut;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
 use tokio::sync::Mutex;
-use tokio::time::{Duration, timeout};
+use tokio::time::{Duration, interval};
 
 use crate::peer::bitfield::Bitfield;
 use crate::peer::message::Message;
-use crate::piece_picker::PiecePicker;
+use crate::piece::picker::PiecePicker;
 
 pub mod bitfield;
+pub mod handshake;
 pub mod message;
 mod piece;
+mod swarm;
 
-const BITTORRENT_PROTOCOL: &str = "BitTorrent protocol";
+const KEEPALIVE_SECONDS: u64 = 30;
+const PIPELINE_DEPTH: usize = 8;
+
+struct PendingRequest {
+    index: usize,
+    offset: u32,
+    length: u32,
+}
 
 pub struct PeerSession {
     address: SocketAddr,
@@ -25,6 +35,7 @@ pub struct PeerSession {
     we_choking_peer: bool,
     we_interested: bool,
     piece_picker: Arc<Mutex<PiecePicker>>,
+    request_pipeline: VecDeque<PendingRequest>,
 }
 
 impl PeerSession {
@@ -42,46 +53,8 @@ impl PeerSession {
             we_choking_peer: true,
             we_interested: false,
             piece_picker,
+            request_pipeline: VecDeque::new(),
         }
-    }
-
-    pub async fn handshake(&mut self, info_hash: [u8; 20], peer_id: &[u8; 20]) -> anyhow::Result<()> {
-        let mut buf = Vec::with_capacity(68);
-
-        // The handshake starts with character ninteen (decimal) followed by the string 'BitTorrent
-        // protocol'.
-        buf.push(BITTORRENT_PROTOCOL.len() as u8);
-        buf.extend_from_slice(BITTORRENT_PROTOCOL.as_bytes());
-
-        // After the fixed headers come eight reserved bytes, which are all zero in all current
-        // implementations.
-        buf.extend_from_slice(&[0u8; 8]);
-
-        // Next comes the 20 byte sha1 hash of the bencoded form of the info value from the metainfo file.
-        buf.extend_from_slice(&info_hash);
-
-        // After the download hash comes
-        // the 20-byte peer id which is reported in tracker requests and contained in peer lists in tracker
-        // responses.
-        buf.extend_from_slice(peer_id);
-
-        self.stream.write_all(&buf).await?;
-        self.stream.flush().await?;
-
-        let mut response = [0u8; 68];
-        self.stream.read_exact(&mut response).await?;
-
-        if &response[1..20] != BITTORRENT_PROTOCOL.as_bytes() {
-            anyhow::bail!("invalid protocol")
-        }
-
-        if response[28..48] != info_hash {
-            anyhow::bail!("mismatched info_hash")
-        }
-
-        tracing::debug!("handshake successful");
-
-        Ok(())
     }
 
     async fn process_messages(&mut self, buf: &mut BytesMut) -> anyhow::Result<()> {
@@ -122,7 +95,7 @@ impl PeerSession {
         }
         let is_useful = {
             let piece_picker = self.piece_picker.lock().await;
-            piece_picker.our_bitfield.our_missing_pieces(&self.peer_bitfield).next().is_some()
+            piece_picker.our_bitfield.missing(&self.peer_bitfield).next().is_some()
         };
 
         if is_useful {
@@ -134,8 +107,26 @@ impl PeerSession {
         Ok(())
     }
 
+    async fn cancel_all_requests(&mut self) {
+        let piece_indexes: HashSet<usize> = self.request_pipeline.iter().map(|request| request.index).collect();
+        self.request_pipeline.clear();
+
+        if !piece_indexes.is_empty() {
+            self.piece_picker.lock().await.cancel_peer_requests(piece_indexes);
+        }
+    }
+
     pub async fn run(&mut self) -> anyhow::Result<()> {
+        tracing::info!("Session started with {}", self.address);
+
+        {
+            let piece_picker = self.piece_picker.lock().await;
+            let our_bitfield = piece_picker.our_bitfield.as_bytes().to_vec();
+            self.stream.write_all(&Message::Bitfield(our_bitfield).encode()).await?;
+        }
+
         let mut buf = BytesMut::with_capacity(64 * 1024);
+        let mut keepalive = interval(Duration::from_secs(KEEPALIVE_SECONDS));
 
         loop {
             tokio::select! {
@@ -143,10 +134,13 @@ impl PeerSession {
                     let n = result?;
                     if n == 0 {
                         tracing::warn!("Peer {} disconnected", self.address);
+                        self.cancel_all_requests().await;
                         break;
                     }
-
                     self.process_messages(&mut buf).await?;
+                }
+                _ = keepalive.tick() => {
+                    self.stream.write_all(&Message::KeepAlive.encode()).await?;
                 }
             }
         }
