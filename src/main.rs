@@ -1,14 +1,16 @@
+use core::task;
 use std::collections::HashSet;
 use std::sync::Arc;
 use std::time::Duration;
 
 use tokio::net::TcpStream;
-use tokio::sync::{RwLock, mpsc};
+use tokio::sync::{Mutex, RwLock, mpsc};
 use tokio::time::timeout;
 use tracing::Level;
 
 use crate::metainfo::Metainfo;
-use crate::peer::handshake;
+use crate::peer::{PeerWorker, handshake};
+use crate::piece::PieceManager;
 use crate::protocol::decoder::Decoder;
 
 mod metainfo;
@@ -66,7 +68,36 @@ async fn main() -> anyhow::Result<()> {
         for peer in peers {
             tracing::debug!("Received peer: {peer}");
 
-            if active_peers >= MAX_PEERS {
+            let piece_manager = Arc::new(Mutex::new(PieceManager::new(piece_count)));
+
+            tokio::spawn(async move {
+                let stream = match timeout(CONNECTION_TIMEOUT, TcpStream::connect(peer)).await {
+                    Ok(Ok(stream)) => stream,
+                    Ok(Err(err)) => {
+                        tracing::error!("Failed to connect to {peer}: {err}");
+                        return;
+                    },
+                    Err(_) => {
+                        tracing::error!("Timeout connecting to {peer}");
+                        return;
+                    },
+                };
+
+                PeerWorker::new(
+                    peer,
+                    stream,
+                    *info_hash,
+                    peer_id,
+                    piece_count,
+                    piece_length,
+                    length,
+                    Arc::clone(&piece_manager),
+                )
+                .run()
+                .await;
+            });
+
+            /* if active_peers >= MAX_PEERS {
                 tracing::warn!("At peer limit ({MAX_PEERS}), skipping ({peer})");
                 continue;
             }
@@ -96,7 +127,7 @@ async fn main() -> anyhow::Result<()> {
                         tracing::error!("Failed to perform handshake with {peer}: {err}");
                     },
                 }
-            });
+            }); */
         }
     }
 

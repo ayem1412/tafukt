@@ -37,7 +37,5 @@ pub async fn perform(stream: &mut TcpStream, info_hash: &[u8; 20], peer_id: &[u8
         anyhow::bail!("mismatched info_hash")
     }
 
-    tracing::debug!("handshake successful");
-
     Ok(())
 }

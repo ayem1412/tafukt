@@ -1,4 +1,5 @@
-use std::{collections::{HashSet, VecDeque}, net::SocketAddr};
+use std::collections::{HashSet, VecDeque};
+use std::net::SocketAddr;
 
 use tokio::sync::mpsc;
 
@@ -57,17 +58,24 @@ impl Swarm {
             }
         }
 
-        tracing::debug!("Swarm: Added new candidates, the Swarm now has {} candidates in total.", self.candidates.len());
+        tracing::debug!(
+            "Swarm: Added new candidates, the Swarm now has {} candidates in total.",
+            self.candidates.len()
+        );
     }
 
     fn fill_slots(&mut self) {
-        if self.shutdown { return; }
+        if self.shutdown {
+            return;
+        }
 
         let current = self.pending.len() + self.actives.len();
         let want = TARGET_PEERS.saturating_sub(current);
 
         for i in 0..want {
-            let Some(addr) = self.candidates.pop_front() else { break; };
+            let Some(addr) = self.candidates.pop_front() else {
+                break;
+            };
 
             if self.actives.contains(&addr) || self.pending.contains(&addr) {
                 continue;
@@ -76,11 +84,9 @@ impl Swarm {
             tracing::debug!("Swarm: Connecting to {addr}");
             self.pending.insert(addr);
 
-            tokio::spawn(async move {
-            });
+            tokio::spawn(async move {});
         }
     }
 }
 
-fn connect_and_handshake() {
-}
+fn connect_and_handshake() {}
