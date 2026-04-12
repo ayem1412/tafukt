@@ -15,10 +15,20 @@ impl PieceManager {
         Self { have: Bitfield::new(piece_count), pending: HashSet::new() }
     }
 
+    pub fn release(&mut self, index: u32) {
+        if !self.have.has(index as usize) {
+            self.pending.remove(&index);
+        }
+    }
+
     pub fn claim_piece(&mut self, peer_bitfield: &Bitfield) -> Option<u32> {
         let index = self.have.missing(peer_bitfield).find(|&i| !self.pending.contains(&(i as u32)))?;
 
         self.pending.insert(index as u32);
         Some(index as u32)
+    }
+
+    pub fn is_complete(&self) -> bool {
+        self.have.is_complete()
     }
 }

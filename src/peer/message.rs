@@ -16,7 +16,11 @@ pub enum Message {
     Unchoke,
     Interested,
     NotInterested,
-    // Have,
+
+    // The 'have' message's payload is a single number,
+    // the index which that downloader just completed and checked the hash of.
+    Have(u32),
+
     /// 'bitfield' is only ever sent as the first message.
     /// Its payload is a bitfield with each index that downloader has sent set to one and the rest
     /// set to zero. Downloaders which don't have anything yet may skip the 'bitfield' message.
@@ -68,13 +72,18 @@ impl Message {
                 buf.put_u32(1);
                 buf.put_u8(3);
             },
+            Message::Have(index) => {
+                buf.put_u32(5);
+                buf.put_u32(*index);
+                buf.put_u8(4);
+            },
             Message::Bitfield(data) => {
                 buf.put_u32(1 + data.len() as u32);
                 buf.put_u8(5);
-                buf.extend_from_slice(data);
+                buf.put_slice(data);
             },
             Message::Request { index, begin, length } => {
-                buf.put_u32(19);
+                buf.put_u32(13);
                 buf.put_u8(6);
                 buf.put_u32(*index);
                 buf.put_u32(*begin);
@@ -85,7 +94,7 @@ impl Message {
                 buf.put_u8(7);
                 buf.put_u32(*index);
                 buf.put_u32(*begin);
-                buf.extend_from_slice(data);
+                buf.put_slice(data);
             },
         }
 
@@ -112,6 +121,7 @@ impl Message {
             1 => Message::Unchoke,
             2 => Message::Interested,
             3 => Message::NotInterested,
+            4 => Message::Have(buf.get_u32()),
             5 => Message::Bitfield(buf.split_to(length - 1).to_vec()),
             6 => Message::Request { index: buf.get_u32(), begin: buf.get_u32(), length: buf.get_u32() },
             7 => Message::Piece { index: buf.get_u32(), begin: buf.get_u32(), data: buf.split_to(length - 9).freeze() },

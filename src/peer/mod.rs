@@ -1,14 +1,14 @@
 use std::collections::{HashMap, VecDeque};
 use std::net::SocketAddr;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use bytes::BytesMut;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
-use tokio::sync::Mutex;
 use tokio::time::interval;
 
+use crate::disk_manager::{Block, DiskManager};
 use crate::peer::bitfield::Bitfield;
 use crate::peer::message::Message;
 use crate::piece::PieceManager;
@@ -19,15 +19,9 @@ pub mod message;
 mod piece;
 mod swarm;
 
-const KEEPALIVE_SECONDS: u64 = 30;
+const KEEPALIVE_SECONDS: u64 = 120;
 const PIPELINE_DEPTH: usize = 8;
 const BLOCK_SIZE: u16 = 16 * 1024;
-
-struct PendingRequest {
-    index: usize,
-    offset: u32,
-    length: u32,
-}
 
 pub struct PeerWorker {
     addr: SocketAddr,
@@ -43,6 +37,7 @@ pub struct PeerWorker {
     current_piece_idx: Option<u32>,
     piece_manager: Arc<Mutex<PieceManager>>,
     in_flight: HashMap<u32, u32>,
+    disk_manager: Arc<Mutex<DiskManager>>,
 }
 
 impl PeerWorker {
@@ -55,6 +50,7 @@ impl PeerWorker {
         piece_length: u64,
         length: u64,
         piece_manager: Arc<Mutex<PieceManager>>,
+        disk_manager: Arc<Mutex<DiskManager>>,
     ) -> Self {
         Self {
             addr,
@@ -70,6 +66,7 @@ impl PeerWorker {
             current_piece_idx: None,
             piece_manager,
             in_flight: HashMap::new(),
+            disk_manager,
         }
     }
 
@@ -77,6 +74,10 @@ impl PeerWorker {
         if let Err(err) = self.try_run().await {
             tracing::error!("PeerWorker: [Peer {}] disconnected: {err}", self.addr);
         };
+
+        if let Some(idx) = self.current_piece_idx {
+            self.piece_manager.lock().unwrap().release(idx);
+        }
     }
 
     async fn try_run(&mut self) -> anyhow::Result<()> {
@@ -87,7 +88,7 @@ impl PeerWorker {
         self.stream.write_all(&Message::Interested.encode()).await?;
 
         let mut buf = BytesMut::with_capacity(32 * 1024);
-        let mut keepalive_interval = interval(Duration::from_secs(120));
+        let mut keepalive_interval = interval(Duration::from_secs(KEEPALIVE_SECONDS));
         keepalive_interval.tick().await;
 
         loop {
@@ -98,12 +99,12 @@ impl PeerWorker {
                 result = self.stream.read_buf(&mut buf) => {
                     let n = result?;
                     if n == 0 {
-                        tracing::error!("PeerWorker: Unable to read messages from [Peer {}]", self.addr);
+                        tracing::error!("PeerWorker: [Peer {}] Closed connection (EOF) - releasing piece {:?}", self.addr, self.current_piece_idx);
                         break;
                     }
 
                     if let Some(msg) = Message::decode(&mut buf) {
-                        self.handle_message(msg).await;
+                        self.handle_message(msg).await?;
                     }
                 }
                 _ = async {}, if can_request => {
@@ -116,22 +117,23 @@ impl PeerWorker {
             }
 
             self.maybe_claim_piece();
+
+            if self.piece_manager.lock().unwrap().is_complete() {
+                break;
+            }
         }
 
         Ok(())
     }
 
     fn piece_len(&self, index: u32) -> u32 {
-        if index as usize == self.piece_count - 1 {
-            let remainder = self.length % self.piece_length;
+        let start = index as u64 * self.piece_length;
+        let remaining = self.length.saturating_sub(start);
 
-            if remainder == 0 { self.piece_length as u32 } else { remainder as u32 }
-        } else {
-            self.piece_length as u32
-        }
+        remaining.min(self.piece_length) as u32
     }
 
-    async fn handle_message(&mut self, msg: Message) {
+    async fn handle_message(&mut self, msg: Message) -> anyhow::Result<()> {
         match msg {
             Message::KeepAlive => tracing::debug!("PeerWorker: [Peer {}] KeepAlive", self.addr),
             Message::Choke => {
@@ -141,26 +143,55 @@ impl PeerWorker {
             Message::Unchoke => {
                 tracing::debug!("PeerWorker: [Peer {}] Unchoked us", self.addr);
                 self.am_choked = false;
+
+                /* if self.peer_bitfield.as_bytes().iter().all(|&i| i == 0) {
+                    for i in 0..self.piece_count {
+                        self.peer_bitfield.set(i);
+                    }
+                } */
+
+                self.maybe_claim_piece();
             },
             Message::Interested => todo!(),
             Message::NotInterested => todo!(),
+            Message::Have(index) => {
+                tracing::debug!("PeerWorker: [Peer {}] Sent us a `Have` message: {index}", self.addr);
+            },
             Message::Bitfield(bits) => {
                 tracing::debug!("PeerWorker: [Peer {}] Sent us their Bitfield", self.addr);
                 self.peer_bitfield = Bitfield::from_bytes(bits, self.piece_count);
 
-                self.maybe_claim_piece().await;
+                self.maybe_claim_piece();
             },
             Message::Request { index, begin, length } => todo!(),
-            Message::Piece { index, begin, data } => todo!(),
+            Message::Piece { index, begin, data } => {
+                if Some(index) != self.current_piece_idx {
+                    return Ok(());
+                }
+
+                tracing::debug!(
+                    "PeerWorker: [Peer {}] Sent us a `Piece` message: index {index} begin {begin}",
+                    self.addr
+                );
+
+                self.in_flight.remove(&begin);
+                self.disk_manager.lock().unwrap().handle_block(Block { index, begin, data: data.to_vec() });
+
+                if self.remaining_blocks.is_empty() && self.in_flight.is_empty() {
+                    self.current_piece_idx = None;
+                }
+            },
         }
+
+        Ok(())
     }
 
-    async fn maybe_claim_piece(&mut self) {
+    fn maybe_claim_piece(&mut self) {
         if self.current_piece_idx.is_some() {
             return;
         }
 
-        let mut piece_manager = self.piece_manager.lock().await;
+        let mut piece_manager = self.piece_manager.lock().unwrap();
         if let Some(index) = piece_manager.claim_piece(&self.peer_bitfield) {
             let piece_len = self.piece_len(index);
 
@@ -176,7 +207,7 @@ impl PeerWorker {
                 v
             };
 
-            tracing::debug!("PeerWorker: [Peer {}] claimed piece {index} ({} blocks)", self.addr, blocks.len());
+            tracing::debug!("PeerWorker: [Peer {}] claimed piece: {index} ({} blocks)", self.addr, blocks.len());
 
             self.current_piece_idx = Some(index);
             self.remaining_blocks = blocks;
@@ -189,7 +220,7 @@ impl PeerWorker {
             let index = self.current_piece_idx.expect("`current_piece_idx` is None");
 
             tracing::debug!(
-                "PeerWorker: Sending `Request` to [Peer {}] piece {index} (begin {begin} length {length})",
+                "PeerWorker: Sending `Request` to [Peer {}]: piece {index} (begin {begin} length {length})",
                 self.addr
             );
             self.stream.write_all(&Message::Request { index, begin, length }.encode()).await?;

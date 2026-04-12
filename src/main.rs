@@ -1,18 +1,21 @@
 use core::task;
 use std::collections::HashSet;
-use std::sync::Arc;
+use std::path::Path;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use tokio::net::TcpStream;
-use tokio::sync::{Mutex, RwLock, mpsc};
+use tokio::sync::mpsc;
 use tokio::time::timeout;
 use tracing::Level;
 
+use crate::disk_manager::DiskManager;
 use crate::metainfo::Metainfo;
 use crate::peer::{PeerWorker, handshake};
 use crate::piece::PieceManager;
 use crate::protocol::decoder::Decoder;
 
+mod disk_manager;
 mod metainfo;
 mod peer;
 mod piece;
@@ -47,6 +50,7 @@ async fn main() -> anyhow::Result<()> {
 
     let name = info.name.clone();
     let length = info.length();
+    tracing::trace!("LENGTH: {length}");
     let piece_length = info.piece_length;
     let piece_count = info.piece_count();
 
@@ -64,11 +68,16 @@ async fn main() -> anyhow::Result<()> {
     // let mut valid_peers = Arc::new(RwLock::new(HashSet::new()));
     let mut active_peers = 0;
 
+    let piece_manager = Arc::new(Mutex::new(PieceManager::new(piece_count)));
+    let disk_manager = Arc::new(Mutex::new(DiskManager::new(Path::new(&name), length, piece_length)?));
+    // let mut handles = vec![];
+
     while let Some(peers) = peers_rx.recv().await {
         for peer in peers {
             tracing::debug!("Received peer: {peer}");
 
-            let piece_manager = Arc::new(Mutex::new(PieceManager::new(piece_count)));
+            let piece_manager = Arc::clone(&piece_manager);
+            let disk_manager = Arc::clone(&disk_manager);
 
             tokio::spawn(async move {
                 let stream = match timeout(CONNECTION_TIMEOUT, TcpStream::connect(peer)).await {
@@ -92,10 +101,13 @@ async fn main() -> anyhow::Result<()> {
                     piece_length,
                     length,
                     Arc::clone(&piece_manager),
+                    disk_manager,
                 )
                 .run()
                 .await;
             });
+
+            // handles.push(handle);
 
             /* if active_peers >= MAX_PEERS {
                 tracing::warn!("At peer limit ({MAX_PEERS}), skipping ({peer})");
@@ -131,7 +143,9 @@ async fn main() -> anyhow::Result<()> {
         }
     }
 
-    tokio::signal::ctrl_c().await.ok();
+    /* for handle in handles {
+        let _ = handle.await;
+    } */
 
     Ok(())
 }
