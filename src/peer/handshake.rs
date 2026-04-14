@@ -1,9 +1,13 @@
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::io::{AsyncReadExt, AsyncWriteExt, BufWriter};
 use tokio::net::TcpStream;
 
 const BITTORRENT_PROTOCOL: &str = "BitTorrent protocol";
 
-pub async fn perform(stream: &mut TcpStream, info_hash: &[u8; 20], peer_id: &[u8; 20]) -> anyhow::Result<()> {
+pub async fn perform(
+    stream: &mut BufWriter<TcpStream>,
+    info_hash: &[u8; 20],
+    peer_id: &[u8; 20],
+) -> anyhow::Result<()> {
     let mut buf = Vec::with_capacity(68);
 
     // The handshake starts with character ninteen (decimal) followed by the string 'BitTorrent

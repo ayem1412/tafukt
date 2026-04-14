@@ -6,7 +6,8 @@ use crate::protocol::Bencode;
 mod tests;
 
 mod error;
-mod info_dictionary;
+mod file_layout;
+pub mod info_dictionary;
 mod info_dictionary_file;
 mod util;
 
@@ -22,8 +23,8 @@ pub struct Metainfo {
 }
 
 impl Metainfo {
-    fn new(announce: Option<String>, info: InfoDictionary) -> Self {
-        Self { announce, info }
+    pub fn info_hash(&self) -> [u8; 20] {
+        self.info.info_hash
     }
 }
 
@@ -37,10 +38,8 @@ impl TryFrom<Bencode> for Metainfo {
         };
 
         let announce = util::extract_optional_string_from_dict(&dict, "announce")?;
-        let info = util::extract_bencode_from_dict(&dict, "info")?;
+        let info = util::extract_bencode_from_dict(&dict, "info").and_then(InfoDictionary::try_from)?;
 
-        let info = InfoDictionary::try_from(info)?;
-
-        Ok(Self::new(announce, info))
+        Ok(Self { announce, info })
     }
 }

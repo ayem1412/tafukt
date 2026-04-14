@@ -1,7 +1,7 @@
 use bitvec::order::Msb0;
 use bitvec::vec::BitVec;
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct Bitfield {
     data: BitVec<u8, Msb0>,
     pub piece_count: usize,

@@ -1,5 +1,3 @@
-use core::task;
-use std::collections::HashSet;
 use std::path::Path;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -11,7 +9,7 @@ use tracing::Level;
 
 use crate::disk_manager::DiskManager;
 use crate::metainfo::Metainfo;
-use crate::peer::{PeerWorker, handshake};
+use crate::peer::manager::PeerWorker;
 use crate::piece::PieceManager;
 use crate::protocol::decoder::Decoder;
 
@@ -45,6 +43,8 @@ async fn main() -> anyhow::Result<()> {
     let result = decoder.decode().unwrap();
 
     let metainfo = Metainfo::try_from(result)?;
+    let info_hash = metainfo.info_hash();
+    let announce_url = metainfo.announce.expect("Trackless torrents are not supported.");
 
     let info = metainfo.info;
 
@@ -56,55 +56,41 @@ async fn main() -> anyhow::Result<()> {
 
     tracing::debug!("Torrent {name} ({piece_count} pieces x {piece_length} bytes = {length} bytes total)");
 
-    let announce_url = metainfo.announce.unwrap();
-    let info_hash = info.info_hash().as_ref().unwrap().as_ref().try_into().unwrap();
     let peer_id = util::generate_peer_id();
 
     let (peers_tx, mut peers_rx) = mpsc::channel(32);
     tokio::spawn(async move {
-        tracker::announce_loop(&announce_url, info_hash, &peer_id, length, peers_tx).await;
+        tracker::announce_loop(&announce_url, &info_hash, &peer_id, length, peers_tx).await;
     });
 
     // let mut valid_peers = Arc::new(RwLock::new(HashSet::new()));
-    let mut active_peers = 0;
+    // let mut active_peers = 0;
 
-    let piece_manager = Arc::new(Mutex::new(PieceManager::new(piece_count)));
+    let piece_manager = Arc::new(Mutex::new(PieceManager::new(piece_count, piece_length, length)));
     let disk_manager = Arc::new(Mutex::new(DiskManager::new(Path::new(&name), length, piece_length)?));
     // let mut handles = vec![];
 
-    while let Some(peers) = peers_rx.recv().await {
-        for peer in peers {
-            tracing::debug!("Received peer: {peer}");
+    while let Some(addresses) = peers_rx.recv().await {
+        for addr in addresses {
+            tracing::debug!("Received peer: {addr}");
 
             let piece_manager = Arc::clone(&piece_manager);
             let disk_manager = Arc::clone(&disk_manager);
 
             tokio::spawn(async move {
-                let stream = match timeout(CONNECTION_TIMEOUT, TcpStream::connect(peer)).await {
+                let stream = match timeout(CONNECTION_TIMEOUT, TcpStream::connect(addr)).await {
                     Ok(Ok(stream)) => stream,
                     Ok(Err(err)) => {
-                        tracing::error!("Failed to connect to {peer}: {err}");
+                        tracing::error!("Failed to connect to {addr}: {err}");
                         return;
                     },
                     Err(_) => {
-                        tracing::error!("Timeout connecting to {peer}");
+                        tracing::error!("Timeout connecting to {addr}");
                         return;
                     },
                 };
 
-                PeerWorker::new(
-                    peer,
-                    stream,
-                    *info_hash,
-                    peer_id,
-                    piece_count,
-                    piece_length,
-                    length,
-                    Arc::clone(&piece_manager),
-                    disk_manager,
-                )
-                .run()
-                .await;
+                PeerWorker::new(addr, stream, piece_manager, disk_manager).run(info_hash, peer_id, piece_count).await;
             });
 
             // handles.push(handle);
