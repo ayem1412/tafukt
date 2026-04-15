@@ -59,7 +59,15 @@ async fn announce(
     event: &str,
 ) -> anyhow::Result<TrackerSuccessResponse> {
     let url = build_url(announce_url, info_hash, peer_id, 6881, uploaded, downloaded, left, event)?;
-    let res = client.get(url).header(header::CONTENT_TYPE, BITTORRENT_MIME_TYPE).send().await?.bytes().await?;
+
+    let res = client
+        .get(url)
+        .header(header::ACCEPT, BITTORRENT_MIME_TYPE)
+        .timeout(Duration::from_secs(10))
+        .send()
+        .await?
+        .bytes()
+        .await?;
 
     decode_response(&res)
 }

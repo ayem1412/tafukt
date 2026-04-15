@@ -39,7 +39,7 @@ async fn main() -> anyhow::Result<()> {
     let reader = BufReader::new(file);
     let mut bytes = reader.bytes().map(|c| c.unwrap()); */
     // let file_content = std::fs::read("./torrents/debian.iso.torrent").unwrap();
-    let file_content = include_bytes!("../torrents/debian.iso.torrent");
+    let file_content = include_bytes!("../torrents/fedora-games.torrent");
     let mut bytes = file_content.iter().copied();
     let mut decoder = Decoder::new(&mut bytes);
     let result = decoder.decode().unwrap();
