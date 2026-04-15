@@ -1,9 +1,11 @@
 use std::collections::BTreeMap;
+use std::sync::OnceLock;
 
 use bytes::Bytes;
-use sha1::Digest;
+use sha1::{Digest, Sha1};
 
 use crate::metainfo::error::MetainfoError;
+use crate::metainfo::file_layout::FileLayout;
 use crate::metainfo::info_dictionary_file::InfoDictionaryFile;
 use crate::metainfo::util;
 use crate::protocol::{Bencode, encoder};
@@ -25,58 +27,40 @@ pub struct InfoDictionary {
     /// pieces maps to a string whose length is a multiple of 20.
     /// It is to be subdivided into strings of length 20,
     /// each of which is the SHA1 hash of the piece at the corresponding index.
-    pieces: Bytes,
+    pub pieces: Bytes,
 
-    /**
-     * There is also a key `length` or a key `files`, but not both or neither.
-     * If length is present then the download represents a single file,
-     * otherwise it represents a set of files which go in a directory structure.
-     */
+    /// There is also a key `length` or a key `files`, but not both or neither.
+    /// If length is present then the download represents a single file,
+    /// otherwise it represents a set of files which go in a directory structure.
+    file_layout: FileLayout,
 
-    /// The length of the file, in bytes.
-    /// In the single file case, length maps to the length of the file in bytes.
-    length: Option<u64>,
-
-    /// For the purposes of the other keys,
-    /// the multi-file case is treated as only having a single file by concatenating the files
-    /// in the order they appearin the files list.
-    /// The files list is the value files maps to.
-    files: Option<Vec<InfoDictionaryFile>>,
+    pub info_hash: [u8; 20],
 }
 
 impl InfoDictionary {
-    fn new(
-        name: String,
-        piece_length: u64,
-        pieces: Bytes,
-        length: Option<u64>,
-        files: Option<Vec<InfoDictionaryFile>>,
-    ) -> Self {
-        Self { name, piece_length, pieces, length, files }
-    }
-
     pub fn piece_count(&self) -> usize {
         self.pieces.len() / 20
     }
 
-    /// Calculates the `info_hash`.
-    pub fn info_hash(self) -> Result<Bytes, MetainfoError> {
-        let hash = Bytes::copy_from_slice(sha1::Sha1::digest(encoder::encode(&Bencode::from(self))).as_ref());
-        if hash.len() != 20 {
-            return Err(MetainfoError::InvalidInfoHashLength(hash.len()));
-        }
+    pub fn piece_len(&self, index: u32) -> u64 {
+        let start = index as u64 * self.piece_length;
+        let remaining = self.length().saturating_sub(start);
 
-        Ok(hash)
+        remaining.min(self.piece_length)
     }
 
+    /// The length of the file, in bytes.
+    /// In the single file case, length maps to the length of the file in bytes.
     pub fn length(&self) -> u64 {
-        if let Some(length) = self.length {
-            length
-        } else if let Some(files) = &self.files {
-            files.iter().map(|file| file.length).sum()
-        } else {
-            0
-        }
+        self.file_layout.length()
+    }
+
+    /// The SHA1 hash for piece `index`, or `None` if out of range.
+    pub fn piece_hash(&self, index: usize) -> Option<[u8; 20]> {
+        let start = index.checked_mul(20)?;
+        let end = start.checked_add(20)?;
+
+        self.pieces.get(start..end)?.try_into().ok()
     }
 }
 
@@ -91,20 +75,28 @@ impl TryFrom<Bencode> for InfoDictionary {
 
         let name = util::extract_string_from_dict(&dict, "name")?;
         let piece_length = util::extract_integer_from_dict(&dict, "piece length")?;
-        let pieces = util::extract_bytes_from_dict(&dict, "pieces")?;
+        let pieces_raw = util::extract_bytes_from_dict(&dict, "pieces")?;
 
-        if pieces.len() % 20 != 0 {
+        if pieces_raw.len() % 20 != 0 {
             return Err(MetainfoError::InvalidPiecesLength);
         }
 
-        let length = util::extract_optional_integer_from_dict(&dict, "length")?;
-        let files = util::extract_optional_list_from_dict(&dict, "files", InfoDictionaryFile::try_from)?;
+        let pieces: Bytes = pieces_raw.into();
 
-        if length.is_none() && files.as_ref().is_none_or(|files| files.is_empty()) {
-            return Err(MetainfoError::MissingFilesAndLength);
-        }
+        let file_layout = {
+            let length = util::extract_optional_integer_from_dict(&dict, "length")?;
+            let files = util::extract_optional_list_from_dict(&dict, "files", InfoDictionaryFile::try_from)?;
 
-        Ok(Self::new(name, piece_length, pieces.into(), length, files))
+            match (length, files) {
+                (Some(length), _) => FileLayout::SingleFile(length),
+                (None, Some(files)) if !files.is_empty() => FileLayout::MultiFile(files),
+                _ => return Err(MetainfoError::MissingFilesAndLength),
+            }
+        };
+
+        let info_hash = compute_info_hash(&name, piece_length, &pieces, &file_layout);
+
+        Ok(Self { name, piece_length, pieces, file_layout, info_hash })
     }
 }
 
@@ -116,32 +108,42 @@ impl From<InfoDictionary> for Bencode {
             ("pieces".into(), Bencode::String(value.pieces.to_vec())),
         ]);
 
-        if let Some(length) = value.length {
-            dict.insert("length".into(), Bencode::Integer(length as i64));
-        } else if let Some(files) = value.files {
-            dict.insert(
-                "files".into(),
-                Bencode::List(
-                    files
-                        .into_iter()
-                        .map(|file| {
-                            let dict = BTreeMap::from([
-                                ("length".into(), Bencode::Integer(file.length as i64)),
-                                (
-                                    "path".into(),
-                                    Bencode::List(
-                                        file.path.into_iter().map(|path| Bencode::String(path.into_bytes())).collect(),
-                                    ),
-                                ),
-                            ]);
-
-                            Bencode::Dictionary(dict)
-                        })
-                        .collect(),
-                ),
-            );
+        match value.file_layout {
+            FileLayout::SingleFile(length) => dict.insert("length".into(), Bencode::Integer(length as i64)),
+            FileLayout::MultiFile(files) => dict.insert("files".into(), files_to_bencode(&files)),
         };
 
         Bencode::Dictionary(dict)
     }
+}
+
+fn compute_info_hash(name: &str, piece_length: u64, pieces: &Bytes, file_layout: &FileLayout) -> [u8; 20] {
+    let mut dict = BTreeMap::from([
+        ("name".into(), Bencode::String(name.as_bytes().to_vec())),
+        ("piece length".into(), Bencode::Integer(piece_length as i64)),
+        ("pieces".into(), Bencode::String(pieces.to_vec())),
+    ]);
+
+    match file_layout {
+        FileLayout::SingleFile(length) => dict.insert("length".into(), Bencode::Integer(*length as i64)),
+        FileLayout::MultiFile(files) => dict.insert("files".into(), files_to_bencode(files)),
+    };
+
+    Sha1::digest(encoder::encode(&Bencode::Dictionary(dict))).into()
+}
+
+fn files_to_bencode(files: &[InfoDictionaryFile]) -> Bencode {
+    let list = files
+        .iter()
+        .map(|file| {
+            let paths = file.path.iter().map(|component| Bencode::String(component.as_bytes().to_vec())).collect();
+
+            Bencode::Dictionary(BTreeMap::from([
+                ("length".into(), Bencode::Integer(file.length as i64)),
+                ("path".into(), Bencode::List(paths)),
+            ]))
+        })
+        .collect();
+
+    Bencode::List(list)
 }
