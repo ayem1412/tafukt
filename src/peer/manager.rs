@@ -1,5 +1,4 @@
 use std::collections::{HashMap, VecDeque};
-use std::future::pending;
 use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -17,7 +16,7 @@ use crate::piece::PieceManager;
 
 const KEEPALIVE_SECONDS: u64 = 120;
 const PIPELINE_DEPTH: usize = 8;
-const BLOCK_SIZE: u16 = 16 * 1024;
+pub const BLOCK_SIZE: u16 = 16 * 1024;
 
 pub struct PeerWorker {
     addr: SocketAddr,

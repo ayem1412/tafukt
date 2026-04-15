@@ -6,7 +6,7 @@ mod in_progress;
 pub mod picker;
 
 pub struct PieceManager {
-    have: Bitfield,
+    pub have: Bitfield,
     pending: HashSet<u32>,
     piece_length: u64,
     length: u64,
@@ -39,5 +39,10 @@ impl PieceManager {
         let remaining = self.length.saturating_sub(start);
 
         remaining.min(self.piece_length) as u32
+    }
+
+    pub fn mark_have(&mut self, index: u32) {
+        self.have.set(index as usize);
+        self.pending.remove(&index);
     }
 }

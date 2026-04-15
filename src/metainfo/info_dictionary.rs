@@ -10,8 +10,6 @@ use crate::metainfo::info_dictionary_file::InfoDictionaryFile;
 use crate::metainfo::util;
 use crate::protocol::{Bencode, encoder};
 
-static INFO_HASH: OnceLock<Result<Bytes, MetainfoError>> = OnceLock::new();
-
 /// Represents the `info` dictionary.
 #[derive(Debug)]
 pub struct InfoDictionary {
@@ -29,7 +27,7 @@ pub struct InfoDictionary {
     /// pieces maps to a string whose length is a multiple of 20.
     /// It is to be subdivided into strings of length 20,
     /// each of which is the SHA1 hash of the piece at the corresponding index.
-    pieces: Bytes,
+    pub pieces: Bytes,
 
     /// There is also a key `length` or a key `files`, but not both or neither.
     /// If length is present then the download represents a single file,
@@ -44,11 +42,11 @@ impl InfoDictionary {
         self.pieces.len() / 20
     }
 
-    fn piece_len(&self, index: u32) -> u32 {
+    pub fn piece_len(&self, index: u32) -> u64 {
         let start = index as u64 * self.piece_length;
         let remaining = self.length().saturating_sub(start);
 
-        remaining.min(self.piece_length) as u32
+        remaining.min(self.piece_length)
     }
 
     /// The length of the file, in bytes.
@@ -60,7 +58,7 @@ impl InfoDictionary {
     /// The SHA1 hash for piece `index`, or `None` if out of range.
     pub fn piece_hash(&self, index: usize) -> Option<[u8; 20]> {
         let start = index.checked_mul(20)?;
-        let end = start.checked_mul(20)?;
+        let end = start.checked_add(20)?;
 
         self.pieces.get(start..end)?.try_into().ok()
     }

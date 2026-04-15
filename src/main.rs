@@ -14,6 +14,7 @@ use crate::piece::PieceManager;
 use crate::protocol::decoder::Decoder;
 
 mod disk_manager;
+mod engine;
 mod metainfo;
 mod peer;
 mod piece;
@@ -26,7 +27,7 @@ const CONNECTION_TIMEOUT: Duration = Duration::from_secs(10);
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    tracing_subscriber::fmt().with_max_level(Level::DEBUG).init();
+    tracing_subscriber::fmt().with_max_level(Level::INFO).init();
     /* let invalid_string = unsafe {
         // archlinux-2026.03.01-x86_64.iso.torrent
         // 716CDB3E77094135E601A83B555CBBB3EB1D9557.torrent
@@ -37,7 +38,8 @@ async fn main() -> anyhow::Result<()> {
     /* let file = File::open("./torrents/716CDB3E77094135E601A83B555CBBB3EB1D9557.torrent").unwrap();
     let reader = BufReader::new(file);
     let mut bytes = reader.bytes().map(|c| c.unwrap()); */
-    let file_content = std::fs::read("./torrents/debian.iso.torrent").unwrap();
+    // let file_content = std::fs::read("./torrents/debian.iso.torrent").unwrap();
+    let file_content = include_bytes!("../torrents/debian.iso.torrent");
     let mut bytes = file_content.iter().copied();
     let mut decoder = Decoder::new(&mut bytes);
     let result = decoder.decode().unwrap();
@@ -67,7 +69,13 @@ async fn main() -> anyhow::Result<()> {
     // let mut active_peers = 0;
 
     let piece_manager = Arc::new(Mutex::new(PieceManager::new(piece_count, piece_length, length)));
-    let disk_manager = Arc::new(Mutex::new(DiskManager::new(Path::new(&name), length, piece_length)?));
+    let disk_manager = Arc::new(Mutex::new(DiskManager::new(
+        Path::new(&name),
+        length,
+        piece_length,
+        Arc::clone(&piece_manager),
+        info,
+    )?));
     // let mut handles = vec![];
 
     while let Some(addresses) = peers_rx.recv().await {

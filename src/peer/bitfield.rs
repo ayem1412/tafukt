@@ -35,4 +35,8 @@ impl Bitfield {
     pub fn is_complete(&self) -> bool {
         self.data.all()
     }
+
+    pub fn count_ones(&self) -> usize {
+        self.data.count_ones()
+    }
 }
