@@ -90,9 +90,10 @@ impl DiskManager {
         piece_manager.mark_have(piece_index);
 
         tracing::info!(
-            "DiskManager: Piece {piece_index} verified - {}/{}",
+            "DiskManager: Piece {piece_index} verified - {}/{} ({:.1}%)",
             piece_manager.have.count_ones(),
-            piece_manager.have.piece_count
+            piece_manager.have.piece_count,
+            piece_manager.have.count_ones() as f64 / piece_manager.have.piece_count as f64 * 100.0
         );
     }
 }
