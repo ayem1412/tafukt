@@ -45,9 +45,9 @@ impl DiskManager {
         })
     }
 
-    pub fn handle_block(&mut self, block: Block) {
+    pub async fn handle_block(&mut self, block: Block) -> anyhow::Result<()> {
         if self.piece_manager.lock().unwrap().is_complete() {
-            return;
+            return Ok(());
         }
 
         let offset = block.index as usize * self.piece_length as usize + block.begin as usize;
@@ -63,23 +63,30 @@ impl DiskManager {
 
         if *remaining == 0 {
             self.blocks_remaining.remove(&block.index);
-            self.verify_hash(block.index);
+            self.verify_hash(block.index).await?;
         }
+
+        Ok(())
     }
 
-    fn verify_hash(&self, piece_index: u32) {
+    async fn verify_hash(&self, piece_index: u32) -> anyhow::Result<()> {
         let offset = piece_index as usize * self.piece_length as usize;
         let len = self.info.piece_len(piece_index) as usize;
 
-        let got: [u8; 20] = Sha1::digest(&self.mmap[offset..offset + len]).into();
+        let data = self.mmap[offset..offset + len].to_vec();
         let expected = self.info.piece_hash(piece_index as usize).expect("out of range `piece_index`");
 
-        tracing::info!("EXPECTED: {:?}", expected);
+        let ok = tokio::task::spawn_blocking(move || {
+            let got: [u8; 20] = Sha1::digest(&data).into();
+            got == expected
+        })
+        .await
+        .unwrap_or(false);
 
-        if got != expected {
-            tracing::debug!("DiskManager: Piece {piece_index} SHA1 mismatch - releasing for retry");
+        if !ok {
+            tracing::error!("DiskManager: Piece {piece_index} SHA1 mismatch - releasing for retry");
             self.piece_manager.lock().unwrap().release(piece_index);
-            return;
+            return Ok(());
         }
 
         if let Err(err) = self.mmap.flush_range(offset, self.piece_length as usize) {
@@ -95,5 +102,7 @@ impl DiskManager {
             piece_manager.have.piece_count,
             piece_manager.have.count_ones() as f64 / piece_manager.have.piece_count as f64 * 100.0
         );
+
+        Ok(())
     }
 }

@@ -27,7 +27,7 @@ pub struct PeerWorker {
     current_piece_idx: Option<u32>,
     piece_manager: Arc<Mutex<PieceManager>>,
     in_flight: HashMap<u32, u32>,
-    disk_manager: Arc<Mutex<DiskManager>>,
+    disk_manager: Arc<tokio::sync::Mutex<DiskManager>>,
 }
 
 impl PeerWorker {
@@ -35,7 +35,7 @@ impl PeerWorker {
         addr: SocketAddr,
         stream: TcpStream,
         piece_manager: Arc<Mutex<PieceManager>>,
-        disk_manager: Arc<Mutex<DiskManager>>,
+        disk_manager: Arc<tokio::sync::Mutex<DiskManager>>,
     ) -> Self {
         Self {
             addr,
@@ -150,7 +150,9 @@ impl PeerWorker {
                 );
 
                 self.in_flight.remove(&begin);
-                self.disk_manager.lock().unwrap().handle_block(Block { index, begin, data: data.to_vec() });
+
+                let mut disk_manager = self.disk_manager.lock().await;
+                disk_manager.handle_block(Block { index, begin, data: data.to_vec() }).await?;
 
                 if self.remaining_blocks.is_empty() && self.in_flight.is_empty() {
                     self.current_piece_idx = None;
