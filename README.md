@@ -13,6 +13,27 @@ cd tafukt
 cargo run
 ```
 
+## Features
+
+### Supported BEPs
+
+- [x] [BEP-3: The BitTorrent Protocol Specification](https://www.bittorrent.org/beps/bep_0003.html)
+- [ ] [BEP-5: DHT Protocol](https://www.bittorrent.org/beps/bep_0005.html)
+- [ ] [BEP-7: IPv6 Tracker Extension](https://www.bittorrent.org/beps/bep_0007.html)
+- [ ] [BEP-9: Extension for Peers to Send Metadata Files](https://www.bittorrent.org/beps/bep_0009.html)
+- [ ] [BEP-10: Extension Protocol](https://www.bittorrent.org/beps/bep_0010.html)
+- [ ] [BEP-11: Peer Exchange (PEX)](https://www.bittorrent.org/beps/bep_0011.html)
+- [ ] [BEP-12: Multitracker Metadata Extension](https://www.bittorrent.org/beps/bep_0012.html)
+- [ ] [BEP-14: Local service discovery](https://www.bittorrent.org/beps/bep_0014.html)
+- [ ] [BEP-15: UDP Tracker Protocol](https://www.bittorrent.org/beps/bep_0015.html)
+- [x] [BEP-20: Peer ID Conventions](https://www.bittorrent.org/beps/bep_0020.html)
+- [x] [BEP-23: Tracker Returns Compact Peer Lists](https://www.bittorrent.org/beps/bep_0023.html)
+- [ ] [BEP-27: Private Torrents](https://www.bittorrent.org/beps/bep_0027.html)
+- [ ] [BEP-29: uTorrent Transport Protocol](https://www.bittorrent.org/beps/bep_0029.html)
+- [ ] [BEP-32: IPv6 extension for DHT](https://www.bittorrent.org/beps/bep_0032.html)
+- [ ] [BEP-47: Padding files and extended file attributes](https://www.bittorrent.org/beps/bep_0047.html)
+- [ ] [BEP-53: Magnet URI extension - Select specific file indices for download](https://www.bittorrent.org/beps/bep_0053.html)
+
 ### Credits
 
 Specifications:  
