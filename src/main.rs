@@ -8,8 +8,10 @@ use tokio::time::timeout;
 use tracing::Level;
 
 use crate::disk_manager::DiskManager;
+use crate::engine::Engine;
 use crate::metainfo::Metainfo;
-use crate::peer::manager::PeerWorker;
+use crate::peer::event::{PeerEvent, PeerEventMessage};
+use crate::peer::worker::PeerWorker;
 use crate::piece::PieceManager;
 use crate::protocol::decoder::Decoder;
 
@@ -27,7 +29,7 @@ const CONNECTION_TIMEOUT: Duration = Duration::from_secs(10);
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    tracing_subscriber::fmt().with_max_level(Level::INFO).init();
+    tracing_subscriber::fmt().with_max_level(Level::DEBUG).init();
     /* let invalid_string = unsafe {
         // archlinux-2026.03.01-x86_64.iso.torrent
         // 716CDB3E77094135E601A83B555CBBB3EB1D9557.torrent
@@ -68,37 +70,63 @@ async fn main() -> anyhow::Result<()> {
     // let mut valid_peers = Arc::new(RwLock::new(HashSet::new()));
     // let mut active_peers = 0;
 
-    let piece_manager = Arc::new(Mutex::new(PieceManager::new(piece_count, piece_length, length)));
-    let disk_manager = Arc::new(tokio::sync::Mutex::new(DiskManager::new(
+    // let piece_manager = Arc::new(Mutex::new(PieceManager::new(piece_count, piece_length, length)));
+    /* let disk_manager = Arc::new(tokio::sync::Mutex::new(DiskManager::new(
         Path::new(&name),
         length,
         piece_length,
         Arc::clone(&piece_manager),
         info,
-    )?));
+    )?)); */
     // let mut handles = vec![];
+    let info = Arc::new(info);
+    let mut piece_manager = PieceManager::new(piece_count, piece_length, length);
 
+    let (disk_event_tx, disk_event_rx) = mpsc::channel(64);
+
+    let mut disk_manager = DiskManager::new(Path::new(&name), length, Arc::clone(&info), disk_event_tx)?;
+    disk_manager.resume(&mut piece_manager).await;
+
+    if piece_manager.is_complete() {
+        tracing::info!("Already complete");
+        return Ok(());
+    }
+
+    let (block_tx, block_rx) = mpsc::channel(512);
+    tokio::spawn(disk_manager.run(block_rx));
+
+    let (peer_event_tx, peer_event_rx) = mpsc::channel(1024);
+    let mut engine = Engine::new(piece_count, piece_manager, peer_event_rx, disk_event_rx, block_tx);
+    tokio::spawn(async move {
+        engine.run(info).await;
+    });
+
+    // let (peer_cmd_tx, peer_cmd_rx) = mpsc::channel(62);
     while let Some(addresses) = peers_rx.recv().await {
         for addr in addresses {
             tracing::debug!("Received peer: {addr}");
 
-            let piece_manager = Arc::clone(&piece_manager);
-            let disk_manager = Arc::clone(&disk_manager);
+            /* let piece_manager = Arc::clone(&piece_manager);
+            let disk_manager = Arc::clone(&disk_manager); */
+
+            let peer_event_tx = peer_event_tx.clone();
+            // let peer_cmd_tx = peer_cmd_tx.clone();
 
             tokio::spawn(async move {
-                let stream = match timeout(CONNECTION_TIMEOUT, TcpStream::connect(addr)).await {
-                    Ok(Ok(stream)) => stream,
+                match timeout(CONNECTION_TIMEOUT, TcpStream::connect(addr)).await {
+                    Ok(Ok(stream)) => {
+                        PeerWorker::new(addr, stream, peer_event_tx).run(info_hash, peer_id).await;
+                    },
                     Ok(Err(err)) => {
                         tracing::error!("Failed to connect to {addr}: {err}");
-                        return;
                     },
                     Err(_) => {
                         tracing::error!("Timeout connecting to {addr}");
-                        return;
                     },
                 };
 
-                PeerWorker::new(addr, stream, piece_manager, disk_manager).run(info_hash, peer_id, piece_count).await;
+                // PeerWorker::new(addr, stream, piece_manager, disk_manager).run(info_hash,
+                // peer_id, piece_count).await;
             });
 
             // handles.push(handle);
