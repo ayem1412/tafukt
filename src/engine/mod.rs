@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use tokio::sync::mpsc;
 
-use crate::disk_manager::{self, Block, DiskEvent};
+use crate::disk_manager::{Block, DiskEvent};
 use crate::metainfo::info_dictionary::InfoDictionary;
 use crate::peer::bitfield::Bitfield;
 use crate::peer::command::PeerCommand;

@@ -72,7 +72,7 @@ impl Swarm {
         let current = self.pending.len() + self.actives.len();
         let want = TARGET_PEERS.saturating_sub(current);
 
-        for i in 0..want {
+        for _i in 0..want {
             let Some(addr) = self.candidates.pop_front() else {
                 break;
             };
