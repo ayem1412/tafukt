@@ -70,6 +70,7 @@ impl PeerWorker {
                 }
                 Some(peer_cmd) = peer_cmd_rx.recv() => {
                     self.handle_peer_cmd(peer_cmd).await?;
+                    self.stream.flush().await?;
                 }
                 _ = keepalive_interval.tick() => {
                     tracing::debug!("[PeerWorker]: Sending KeepAlive to Peer {}", self.addr);
@@ -104,7 +105,7 @@ impl PeerWorker {
             PeerCommand::Request { index, begin, length } => {
                 tracing::debug!("[PeerWorker]: Requesting Piece {index} (begin {begin} length {length})");
 
-                self.send(Message::Request { index, begin, length }).await?;
+                self.stream.write_all(&Message::Request { index, begin, length }.encode()).await?;
             },
         }
 
