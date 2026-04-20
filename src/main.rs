@@ -80,7 +80,7 @@ async fn main() -> anyhow::Result<()> {
     )?)); */
     // let mut handles = vec![];
     let info = Arc::new(info);
-    let mut piece_manager = PieceManager::new(piece_count, piece_length, length);
+    let mut piece_manager = PieceManager::new(piece_count);
 
     let (disk_event_tx, disk_event_rx) = mpsc::channel(64);
 
