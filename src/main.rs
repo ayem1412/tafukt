@@ -1,5 +1,5 @@
 use std::path::Path;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use std::time::Duration;
 
 use tokio::net::TcpStream;
@@ -10,7 +10,6 @@ use tracing::Level;
 use crate::disk_manager::DiskManager;
 use crate::engine::Engine;
 use crate::metainfo::Metainfo;
-use crate::peer::event::{PeerEvent, PeerEventMessage};
 use crate::peer::worker::PeerWorker;
 use crate::piece::PieceManager;
 use crate::protocol::decoder::Decoder;

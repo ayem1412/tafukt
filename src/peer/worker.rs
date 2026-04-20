@@ -1,6 +1,4 @@
-use std::collections::{HashMap, VecDeque};
 use std::net::SocketAddr;
-use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use bytes::BytesMut;
@@ -9,14 +7,10 @@ use tokio::net::TcpStream;
 use tokio::sync::mpsc;
 use tokio::time::interval;
 
-use crate::disk_manager::{Block, DiskManager};
-use crate::metainfo::info_dictionary::InfoDictionary;
-use crate::peer::bitfield::Bitfield;
 use crate::peer::command::PeerCommand;
 use crate::peer::event::{PeerEvent, PeerEventMessage};
 use crate::peer::handshake;
 use crate::peer::message::Message;
-use crate::piece::PieceManager;
 
 const KEEPALIVE_PERIOD: Duration = Duration::from_secs(120);
 const PIPELINE_DEPTH: usize = 8;
@@ -91,7 +85,7 @@ impl PeerWorker {
             Message::NotInterested => todo!(),
             Message::Have(piece_index) => self.emit(PeerEvent::Have(piece_index)).await?,
             Message::Bitfield(bits) => self.emit(PeerEvent::Bitfield(bits)).await?,
-            Message::Request { index, begin, length } => todo!(),
+            Message::Request { index: _, begin: _, length: _ } => todo!(),
             Message::Piece { index, begin, data } => {
                 self.emit(PeerEvent::Block { piece_index: index, begin, data }).await?
             },
