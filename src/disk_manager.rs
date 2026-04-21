@@ -111,23 +111,19 @@ impl DiskManager {
         let offset = piece_index as usize * self.info_dictionary.piece_length as usize;
         let len = self.info_dictionary.piece_len(piece_index) as usize;
 
-        let data = self.mmap[offset..offset + len].to_vec();
+        let data = &self.mmap[offset..offset + len];
         let expected = self.info_dictionary.piece_hash(piece_index as usize);
 
-        let disk_event_tx = self.disk_event_tx.clone();
+        let got: [u8; 20] = Sha1::digest(data).into();
+        let event = if Some(got) == expected {
+            DiskEvent::PieceVerified(piece_index)
+        } else {
+            tracing::error!("[DiskManager]: Piece {piece_index} SHA1 mismatch");
+            DiskEvent::PieceFailed(piece_index)
+        };
 
-        tokio::task::spawn_blocking(move || {
-            let got: [u8; 20] = Sha1::digest(&data).into();
-            let event = if Some(got) == expected {
-                DiskEvent::PieceVerified(piece_index)
-            } else {
-                tracing::error!("[DiskManager]: Piece {piece_index} SHA1 mismatch");
-                DiskEvent::PieceFailed(piece_index)
-            };
-
-            if disk_event_tx.try_send(event).is_err() {
-                tracing::error!("[DiskManager]: channel full");
-            }
-        });
+        if self.disk_event_tx.try_send(event).is_err() {
+            tracing::error!("[DiskManager]: channel full");
+        }
     }
 }
