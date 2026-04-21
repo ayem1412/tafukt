@@ -96,9 +96,18 @@ impl PeerWorker {
     async fn handle_peer_cmd(&mut self, peer_cmd: PeerCommand) -> anyhow::Result<()> {
         match peer_cmd {
             PeerCommand::Request { index, begin, length } => {
-                tracing::debug!("[PeerWorker]: Requesting Piece {index} (begin {begin} length {length})");
+                tracing::debug!(
+                    "[PeerWorker]: Requesting Piece {index} (begin {begin} length {length}) from {}",
+                    self.addr
+                );
 
                 self.stream.write_all(&Message::Request { index, begin, length }.encode()).await?;
+            },
+            PeerCommand::Have(index) => {
+                tracing::debug!("[PeerWorker]: Sending Have {index} to {}", self.addr);
+
+                self.stream.write_all(&Message::Have(index).encode()).await?;
+                self.stream.flush().await?;
             },
         }
 

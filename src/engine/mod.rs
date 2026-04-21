@@ -42,7 +42,7 @@ impl Engine {
                     self.handle_peer_event_message(event_message).await;
                 }
                 Some(disk_event) = self.disk_event_rx.recv() => {
-                    self.handle_disk_event(disk_event);
+                    self.handle_disk_event(disk_event).await;
                 }
             }
 
@@ -147,9 +147,18 @@ impl Engine {
         }
     }
 
-    fn handle_disk_event(&mut self, disk_event: DiskEvent) {
+    async fn handle_disk_event(&mut self, disk_event: DiskEvent) {
         match disk_event {
-            DiskEvent::PieceVerified(index) => self.piece_manager.mark_have(index),
+            DiskEvent::PieceVerified(index) => {
+                self.piece_manager.mark_have(index);
+                let addresses: Vec<SocketAddr> = self.peer_states.keys().copied().collect();
+
+                for addr in addresses {
+                    if let Some(peer_state) = self.peer_states.get(&addr) {
+                        let _ = peer_state.peer_cmd_tx.send(PeerCommand::Have(index)).await;
+                    }
+                }
+            },
             DiskEvent::PieceFailed(index) => self.piece_manager.release(index),
         }
     }
@@ -167,7 +176,8 @@ impl Engine {
             if let Some(piece_idx) = self.piece_manager.claim_piece(&peer_state.bitfield) {
                 peer_state.in_flight.clear();
                 peer_state.current_piece_idx = Some(piece_idx);
-                peer_state.remaining_blocks = populate_remaining_blocks(self.info_dictionary.piece_len(piece_idx) as u32);
+                peer_state.remaining_blocks =
+                    populate_remaining_blocks(self.info_dictionary.piece_len(piece_idx) as u32);
             } else {
                 return;
             }

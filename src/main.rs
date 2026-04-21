@@ -96,9 +96,7 @@ async fn main() -> anyhow::Result<()> {
 
     let (peer_event_tx, peer_event_rx) = mpsc::channel(1024);
     let mut engine = Engine::new(info, piece_manager, peer_event_rx, disk_event_rx, block_tx);
-    tokio::spawn(async move {
-        engine.run().await
-    });
+    tokio::spawn(async move { engine.run().await });
 
     // let (peer_cmd_tx, peer_cmd_rx) = mpsc::channel(62);
     while let Some(addresses) = peers_rx.recv().await {
