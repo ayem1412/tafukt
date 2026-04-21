@@ -39,4 +39,8 @@ impl Bitfield {
     pub fn count_ones(&self) -> usize {
         self.data.count_ones()
     }
+
+    pub fn count_zeros(&self) -> usize {
+        self.data.count_zeros()
+    }
 }

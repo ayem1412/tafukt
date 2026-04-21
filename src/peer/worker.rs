@@ -13,7 +13,6 @@ use crate::peer::handshake;
 use crate::peer::message::Message;
 
 const KEEPALIVE_PERIOD: Duration = Duration::from_secs(120);
-const PIPELINE_DEPTH: usize = 8;
 pub const BLOCK_SIZE: u16 = 16 * 1024;
 
 pub struct PeerWorker {
@@ -106,6 +105,7 @@ impl PeerWorker {
         Ok(())
     }
 
+    /// Emits an event to the [`Engine`].
     async fn emit(&self, event: PeerEvent) -> anyhow::Result<()> {
         self.peer_event_tx.send(PeerEventMessage { addr: self.addr, event }).await?;
         Ok(())
