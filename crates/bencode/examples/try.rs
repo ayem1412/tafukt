@@ -1,4 +1,5 @@
 use std::fs;
+use std::time::Instant;
 
 use bencode::decoder;
 
@@ -9,6 +10,11 @@ fn main() {
     ))
     .unwrap();
 
-    let value = decoder::decode(&data).unwrap();
-    println!("{value}");
+    let iterations = 10_000;
+    let start = Instant::now();
+    for _ in 0..iterations {
+        let value = decoder::decode(&data).unwrap();
+        std::hint::black_box(&value);
+    }
+    println!("{:?} per decode", start.elapsed() / iterations);
 }
