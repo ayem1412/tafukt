@@ -1,7 +1,12 @@
+#[cfg(test)]
+mod tests;
+
 use std::collections::BTreeMap;
 
-use crate::bencode_value::BencodeValue;
-use crate::cursor::{Cursor, CursorError};
+use crate::{
+    bencode::Bencode,
+    cursor::{Cursor, CursorError},
+};
 
 #[derive(Debug, thiserror::Error)]
 pub enum DecoderError {
@@ -21,7 +26,7 @@ pub enum DecoderError {
     CursorError(#[from] CursorError),
 }
 
-pub fn decode(data: &[u8]) -> Result<BencodeValue<'_>, DecoderError> {
+pub fn decode(data: &[u8]) -> Result<Bencode<'_>, DecoderError> {
     let mut cursor = Cursor::new(data);
     let value = parse(&mut cursor)?;
 
@@ -32,9 +37,9 @@ pub fn decode(data: &[u8]) -> Result<BencodeValue<'_>, DecoderError> {
     Ok(value)
 }
 
-fn parse<'a>(cursor: &mut Cursor<'a>) -> Result<BencodeValue<'a>, DecoderError> {
+fn parse<'a>(cursor: &mut Cursor<'a>) -> Result<Bencode<'a>, DecoderError> {
     match cursor.peek()? {
-        b'0'..=b'9' => Ok(BencodeValue::String(decode_string(cursor)?)),
+        b'0'..=b'9' => Ok(Bencode::String(decode_string(cursor)?)),
         b'i' => Ok(decode_integer(cursor)?),
         b'd' => Ok(decode_dictionary(cursor)?),
         b'l' => Ok(decode_list(cursor)?),
@@ -87,7 +92,7 @@ fn decode_string<'a>(cursor: &mut Cursor<'a>) -> Result<&'a [u8], DecoderError> 
     Ok(cursor.take(length)?)
 }
 
-fn decode_integer<'a>(cursor: &mut Cursor<'a>) -> Result<BencodeValue<'a>, DecoderError> {
+fn decode_integer<'a>(cursor: &mut Cursor<'a>) -> Result<Bencode<'a>, DecoderError> {
     cursor.expect(b'i')?;
 
     let negative = cursor.peek()? == b'-';
@@ -103,10 +108,10 @@ fn decode_integer<'a>(cursor: &mut Cursor<'a>) -> Result<BencodeValue<'a>, Decod
 
     let value = i64::try_from(magnitude).map_err(|_| CursorError::Overflow)?;
 
-    Ok(BencodeValue::Integer(if negative { -value } else { value }))
+    Ok(Bencode::Integer(if negative { -value } else { value }))
 }
 
-fn decode_dictionary<'a>(cursor: &mut Cursor<'a>) -> Result<BencodeValue<'a>, DecoderError> {
+fn decode_dictionary<'a>(cursor: &mut Cursor<'a>) -> Result<Bencode<'a>, DecoderError> {
     cursor.expect(b'd')?;
     cursor.enter()?;
 
@@ -122,10 +127,10 @@ fn decode_dictionary<'a>(cursor: &mut Cursor<'a>) -> Result<BencodeValue<'a>, De
     cursor.bump()?;
     cursor.leave();
 
-    Ok(BencodeValue::Dictionary(dictionary))
+    Ok(Bencode::Dictionary(dictionary))
 }
 
-fn decode_list<'a>(cursor: &mut Cursor<'a>) -> Result<BencodeValue<'a>, DecoderError> {
+fn decode_list<'a>(cursor: &mut Cursor<'a>) -> Result<Bencode<'a>, DecoderError> {
     cursor.expect(b'l')?;
     cursor.enter()?;
 
@@ -139,14 +144,14 @@ fn decode_list<'a>(cursor: &mut Cursor<'a>) -> Result<BencodeValue<'a>, DecoderE
     cursor.bump()?;
     cursor.leave();
 
-    Ok(BencodeValue::List(list))
+    Ok(Bencode::List(list))
 }
 
 /// A half-open range into the original bytes: [start, end).
 pub type Span = (usize, usize);
 
 pub struct DecodedRoot<'a> {
-    pub root: BTreeMap<&'a [u8], BencodeValue<'a>>,
+    pub root: BTreeMap<&'a [u8], Bencode<'a>>,
     pub spans: BTreeMap<&'a [u8], Span>,
 }
 

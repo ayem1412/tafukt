@@ -1,3 +1,4 @@
-mod bencode_value;
+mod bencode;
 mod cursor;
 pub mod decoder;
+pub mod encoder;

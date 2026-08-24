@@ -1,30 +1,30 @@
-use std::collections::BTreeMap;
-use std::fmt;
+use std::{collections::BTreeMap, fmt};
 
 const MAX_STRING_LEN: usize = 60;
 const INDENT: &str = "  ";
 
-pub enum BencodeValue<'a> {
+#[derive(Debug)]
+pub enum Bencode<'a> {
     String(&'a [u8]),
     Integer(i64),
-    Dictionary(BTreeMap<&'a [u8], BencodeValue<'a>>),
-    List(Vec<BencodeValue<'a>>),
+    Dictionary(BTreeMap<&'a [u8], Bencode<'a>>),
+    List(Vec<Bencode<'a>>),
 }
 
-impl fmt::Display for BencodeValue<'_> {
+impl fmt::Display for Bencode<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         self.write_at(f, 0)
     }
 }
 
-impl BencodeValue<'_> {
+impl Bencode<'_> {
     fn write_at(&self, f: &mut fmt::Formatter<'_>, depth: usize) -> fmt::Result {
         match self {
-            BencodeValue::Integer(n) => write!(f, "{n}"),
+            Bencode::Integer(n) => write!(f, "{n}"),
 
-            BencodeValue::String(bytes) => write_bytes(f, bytes),
+            Bencode::String(bytes) => write_bytes(f, bytes),
 
-            BencodeValue::List(items) => {
+            Bencode::List(items) => {
                 if items.is_empty() {
                     return write!(f, "[]");
                 }
@@ -39,7 +39,7 @@ impl BencodeValue<'_> {
                 write!(f, "]")
             }
 
-            BencodeValue::Dictionary(map) => {
+            Bencode::Dictionary(map) => {
                 if map.is_empty() {
                     return write!(f, "{{}}");
                 }

@@ -1,5 +1,4 @@
-use std::fs;
-use std::time::Instant;
+use std::{fs, time::Instant};
 
 use bencode::decoder;
 
