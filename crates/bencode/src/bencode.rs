@@ -3,6 +3,15 @@ use std::{collections::BTreeMap, fmt};
 const MAX_STRING_LEN: usize = 60;
 const INDENT: &str = "  ";
 
+#[derive(Debug, thiserror::Error)]
+pub enum BencodeError {
+    #[error("expected: {want}, got: {got}")]
+    WrongType {
+        want: &'static str,
+        got: &'static str,
+    },
+}
+
 #[derive(Debug)]
 pub enum Bencode<'a> {
     String(&'a [u8]),
@@ -17,7 +26,56 @@ impl fmt::Display for Bencode<'_> {
     }
 }
 
-impl Bencode<'_> {
+impl<'a> Bencode<'a> {
+    fn kind(&self) -> &'static str {
+        match self {
+            Bencode::String(_) => "string",
+            Bencode::Integer(_) => "integer",
+            Bencode::Dictionary(_) => "dictionary",
+            Bencode::List(_) => "list",
+        }
+    }
+
+    pub fn as_i64(&self) -> Result<i64, BencodeError> {
+        match self {
+            Bencode::Integer(number) => Ok(*number),
+            _ => Err(BencodeError::WrongType {
+                want: "integer",
+                got: self.kind(),
+            }),
+        }
+    }
+
+    pub fn as_bytes(&self) -> Result<&[u8], BencodeError> {
+        match self {
+            Bencode::String(bytes) => Ok(*bytes),
+            _ => Err(BencodeError::WrongType {
+                want: "string",
+                got: self.kind(),
+            }),
+        }
+    }
+
+    pub fn as_dictionary(&self) -> Result<&BTreeMap<&[u8], Bencode<'a>>, BencodeError> {
+        match self {
+            Bencode::Dictionary(dict) => Ok(dict),
+            _ => Err(BencodeError::WrongType {
+                want: "dictionary",
+                got: self.kind(),
+            }),
+        }
+    }
+
+    pub fn as_list(&self) -> Result<&[Bencode<'a>], BencodeError> {
+        match self {
+            Bencode::List(items) => Ok(items),
+            _ => Err(BencodeError::WrongType {
+                want: "list",
+                got: self.kind(),
+            }),
+        }
+    }
+
     fn write_at(&self, f: &mut fmt::Formatter<'_>, depth: usize) -> fmt::Result {
         match self {
             Bencode::Integer(n) => write!(f, "{n}"),
