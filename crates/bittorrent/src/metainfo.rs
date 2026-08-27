@@ -1,5 +1,20 @@
 use std::path::PathBuf;
 
+use bencode::bencode::BencodeError;
+use bencode::decoder::{self, DecoderError};
+
+use crate::util;
+
+#[derive(Debug, thiserror::Error)]
+pub enum MetainfoError {
+    #[error("could not find key: {0}")]
+    KeyNotFound(&'static str),
+    #[error(transparent)]
+    DecoderError(#[from] DecoderError),
+    #[error(transparent)]
+    BencodeError(#[from] BencodeError),
+}
+
 struct Info {
     /// all files in order, with cumulative offsets; single-file torrents have exactly one entry.
     files: Vec<FileEntry>,
@@ -36,7 +51,7 @@ struct FileEntry {
 
 pub struct Metainfo {
     /// the URL of the tracker.
-    announce: String,
+    announce: Option<String>,
     /// tiers of backup trackers (BEP 12), if the torrent has any.
     ///
     /// each inner list is a tier: try every tracker in a tier (shuffled) before
@@ -54,4 +69,14 @@ pub struct Metainfo {
     /// span rather than a re-encoding of the parsed value — re-encoding can
     /// differ by a byte and produce a hash no peer will accept.
     info_hash: [u8; 20],
+}
+
+impl Metainfo {
+    fn from_bytes(data: &[u8]) -> Result<(), MetainfoError> {
+        let decoded_root = decoder::decode_dictionary_with_spans(data)?;
+        let root = &decoded_root.root;
+
+        let announce = util::get_opt_string_lossy(root, "announce")?;
+        Ok(())
+    }
 }
