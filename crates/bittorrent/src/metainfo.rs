@@ -1,14 +1,27 @@
 use std::path::PathBuf;
 
-use bencode::bencode::BencodeError;
-use bencode::decoder::{self, DecoderError};
+use bencode::{
+    bencode::BencodeError,
+    decoder::{self, DecoderError},
+};
+use sha1::{Digest, Sha1};
 
-use crate::util;
+use crate::util::{self, check_path_component};
 
 #[derive(Debug, thiserror::Error)]
 pub enum MetainfoError {
     #[error("could not find key: {0}")]
     KeyNotFound(&'static str),
+    #[error("the length of the `pieces` field must divide evenly by 20")]
+    InvalidPiecesLength,
+    #[error("the length of the file must be positive")]
+    NegativeLength,
+    #[error("the torrent has an invalid path")]
+    InvalidPath,
+    #[error("offset overflow due to large file")]
+    OffsetOverflow,
+    #[error("missing both `files` and `length` keys from the torrent file")]
+    MissingFileInfo,
     #[error(transparent)]
     DecoderError(#[from] DecoderError),
     #[error(transparent)]
@@ -40,13 +53,24 @@ struct Info {
     private: bool,
 }
 
-struct FileEntry {
+#[derive(Debug)]
+pub struct FileEntry {
     /// size of the file in bytes.
     length: u64,
     /// relative to the download directory.
     path: PathBuf,
     /// where this file starts in the whole-torrent strip.
     offset: u64,
+}
+
+impl FileEntry {
+    fn new(length: u64, path: PathBuf, offset: u64) -> Self {
+        Self {
+            length,
+            path,
+            offset,
+        }
+    }
 }
 
 pub struct Metainfo {
@@ -72,11 +96,83 @@ pub struct Metainfo {
 }
 
 impl Metainfo {
-    fn from_bytes(data: &[u8]) -> Result<(), MetainfoError> {
+    pub fn from_bytes(data: &[u8]) -> Result<(), MetainfoError> {
         let decoded_root = decoder::decode_dictionary_with_spans(data)?;
         let root = &decoded_root.root;
 
         let announce = util::get_opt_string_lossy(root, "announce")?;
+
+        let info = util::get_key(root, "info")?.as_dictionary()?;
+
+        let name = util::get_key(info, "name")?.as_bytes()?;
+        util::check_path_component(name)?;
+
+        let piece_length = util::get_key(info, "piece length")?.as_i64()? as u32;
+        let private = if let Some(private) = util::get_opt(info, "private") {
+            private.as_i64()? != 0
+        } else {
+            false
+        };
+
+        let pieces = util::get_key(info, "pieces")?.as_bytes()?;
+        if pieces.len() % 20 != 0 {
+            return Err(MetainfoError::InvalidPiecesLength);
+        }
+        let pieces: Vec<[u8; 20]> = pieces
+            .chunks_exact(20)
+            .map(|chunk| {
+                let mut hash = [0u8; 20];
+                hash.copy_from_slice(chunk);
+                hash
+            })
+            .collect();
+
+        let mut file_entries = vec![];
+        if let Some(length) = util::get_opt(info, "length") {
+            file_entries.push(FileEntry::new(
+                util::as_u64(length)?,
+                util::to_path(name),
+                0,
+            ));
+        } else if let Some(files) = util::get_opt(info, "files") {
+            let files = files.as_list()?;
+            file_entries.reserve(files.len());
+
+            let mut offset = 0;
+
+            for file in files {
+                let dict = file.as_dictionary()?;
+                let length = util::as_u64(util::get_key(dict, "length")?)?;
+
+                let components = util::get_key(dict, "path")?.as_list()?;
+                if components.is_empty() {
+                    return Err(MetainfoError::InvalidPath);
+                }
+
+                let mut path = util::to_path(name);
+                for component in components {
+                    let bytes = component.as_bytes()?;
+                    util::check_path_component(bytes)?;
+                    path.push(String::from_utf8_lossy(bytes).as_ref());
+                }
+
+                file_entries.push(FileEntry::new(length, path, offset));
+
+                // very unlikely to happen but just to be safe.
+                offset = offset
+                    .checked_add(length)
+                    .ok_or(MetainfoError::OffsetOverflow)?;
+            }
+        } else {
+            return Err(MetainfoError::MissingFileInfo);
+        }
+
+        let &(start, end) = decoded_root
+            .spans
+            .get(b"info".as_slice())
+            .ok_or(MetainfoError::KeyNotFound("info"))?;
+
+        let info_hash: [u8; 20] = Sha1::digest(&data[start..end]).into();
         Ok(())
     }
 }

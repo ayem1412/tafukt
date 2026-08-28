@@ -1,2 +1,2 @@
-mod metainfo;
-mod util;
+pub mod metainfo;
+pub mod util;
