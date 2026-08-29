@@ -4,7 +4,7 @@ use bencode::bencode::Bencode;
 
 use crate::metainfo::MetainfoError;
 
-type Dict<'a> = BTreeMap<&'a [u8], Bencode<'a>>;
+pub type Dict<'a> = BTreeMap<&'a [u8], Bencode<'a>>;
 
 pub fn get_key<'a>(
     dict: &'a Dict<'a>,
