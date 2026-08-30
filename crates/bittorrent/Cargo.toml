@@ -7,3 +7,4 @@ edition = "2024"
 bencode = { path = "../bencode/" }
 thiserror = "2.0.20"
 sha1 = "0.11.0"
+data-encoding = "2.11.1"

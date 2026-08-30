@@ -1,8 +1,16 @@
-use std::{collections::BTreeMap, path::PathBuf};
+use std::{collections::BTreeMap, num::ParseIntError, path::PathBuf};
 
 use bencode::bencode::Bencode;
 
 use crate::metainfo::MetainfoError;
+
+#[derive(Debug, thiserror::Error)]
+pub enum HexError {
+    #[error("hex string must have an even number of characters")]
+    OddLength,
+    #[error("invalid hex character: {0:?}")]
+    InvalidCharacter(char),
+}
 
 pub type Dict<'a> = BTreeMap<&'a [u8], Bencode<'a>>;
 
@@ -60,4 +68,70 @@ pub fn as_u64(value: &Bencode) -> Result<u64, MetainfoError> {
 
 pub fn to_path(bytes: &[u8]) -> PathBuf {
     PathBuf::from(String::from_utf8_lossy(bytes).into_owned())
+}
+
+pub fn decode_hex(s: &str) -> Result<Vec<u8>, ParseIntError> {
+    (0..s.len())
+        .step_by(2)
+        .map(|i| u8::from_str_radix(&s[i..i + 2], 16))
+        .collect()
+}
+
+fn hex_value(byte: u8) -> Result<u8, HexError> {
+    match byte {
+        b'0'..=b'9' => Ok(byte - b'0'),
+        b'a'..=b'f' => Ok(byte - b'a' + 10),
+        b'A'..=b'F' => Ok(byte - b'A' + 10),
+        other => Err(HexError::InvalidCharacter(other as char)),
+    }
+}
+
+pub fn decode_hex_array<const N: usize>(s: &str) -> Result<[u8; N], HexError> {
+    let bytes = s.as_bytes();
+
+    if bytes.len() != N * 2 {
+        return Err(HexError::OddLength);
+    }
+
+    let mut out = [0u8; N];
+    for (slot, pair) in out.iter_mut().zip(bytes.as_chunks::<2>().0) {
+        *slot = hex_value(pair[0])? << 4 | hex_value(pair[1])?;
+    }
+
+    Ok(out)
+}
+
+pub fn percent_decode(s: &str) -> Vec<u8> {
+    let bytes = s.as_bytes();
+    let mut decoded = Vec::with_capacity(bytes.len());
+    let mut i = 0;
+
+    while i < bytes.len() {
+        match bytes[i] {
+            b'+' => {
+                decoded.push(b' ');
+                i += 1;
+            }
+
+            b'%' if i + 3 <= bytes.len() => {
+                match (hex_value(bytes[i + 1]), hex_value(bytes[i + 2])) {
+                    (Ok(high), Ok(low)) => {
+                        decoded.push(high << 4 | low);
+                        i += 3;
+                    }
+                    _ => {
+                        decoded.push(b'%');
+                        i += 1;
+                    }
+                }
+            }
+
+            other => {
+                decoded.push(other);
+                i += 1;
+            }
+        }
+    }
+
+    decoded
 }
