@@ -16,18 +16,12 @@ pub enum BencodeError {
 pub enum Bencode<'a> {
     String(&'a [u8]),
     Integer(i64),
-    Dictionary(BTreeMap<&'a [u8], Bencode<'a>>),
-    List(Vec<Bencode<'a>>),
+    Dictionary(BTreeMap<&'a [u8], Self>),
+    List(Vec<Self>),
 }
 
-impl fmt::Display for Bencode<'_> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        self.write_at(f, 0)
-    }
-}
-
-impl<'a> Bencode<'a> {
-    fn kind(&self) -> &'static str {
+impl Bencode<'_> {
+    pub const fn kind(&self) -> &'static str {
         match self {
             Bencode::String(_) => "string",
             Bencode::Integer(_) => "integer",
@@ -36,7 +30,7 @@ impl<'a> Bencode<'a> {
         }
     }
 
-    pub fn as_i64(&self) -> Result<i64, BencodeError> {
+    pub const fn as_i64(&self) -> Result<i64, BencodeError> {
         match self {
             Bencode::Integer(number) => Ok(*number),
             _ => Err(BencodeError::WrongType {
@@ -46,7 +40,7 @@ impl<'a> Bencode<'a> {
         }
     }
 
-    pub fn as_bytes(&self) -> Result<&[u8], BencodeError> {
+    pub const fn as_bytes(&self) -> Result<&[u8], BencodeError> {
         match self {
             Bencode::String(bytes) => Ok(*bytes),
             _ => Err(BencodeError::WrongType {
@@ -56,7 +50,7 @@ impl<'a> Bencode<'a> {
         }
     }
 
-    pub fn as_dictionary(&self) -> Result<&BTreeMap<&[u8], Bencode<'a>>, BencodeError> {
+    pub const fn as_dictionary(&self) -> Result<&BTreeMap<&[u8], Self>, BencodeError> {
         match self {
             Bencode::Dictionary(dict) => Ok(dict),
             _ => Err(BencodeError::WrongType {
@@ -66,7 +60,7 @@ impl<'a> Bencode<'a> {
         }
     }
 
-    pub fn as_list(&self) -> Result<&[Bencode<'a>], BencodeError> {
+    pub fn as_list(&self) -> Result<&[Self], BencodeError> {
         match self {
             Bencode::List(items) => Ok(items),
             _ => Err(BencodeError::WrongType {
@@ -134,10 +128,15 @@ fn write_bytes(f: &mut fmt::Formatter<'_>, bytes: &[u8]) -> fmt::Result {
                 .char_indices()
                 .take_while(|(i, _)| *i <= MAX_STRING_LEN)
                 .last()
-                .map(|(i, _)| i)
-                .unwrap_or(0);
+                .map_or(0, |(i, _)| i);
             write!(f, "\"{}…\" ({} bytes)", &text[..cut], bytes.len())
         }
         Err(_) => write!(f, "<{} bytes binary>", bytes.len()),
+    }
+}
+
+impl fmt::Display for Bencode<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.write_at(f, 0)
     }
 }

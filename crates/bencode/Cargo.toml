@@ -1,7 +1,10 @@
 [package]
 name = "bencode"
-version = "0.1.2"
+version = "0.9.9"
 edition = "2024"
+
+[lints]
+workspace = true
 
 [dependencies]
 thiserror = "2.0.20"

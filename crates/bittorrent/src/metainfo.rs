@@ -1,12 +1,14 @@
-use std::path::PathBuf;
+use std::{collections::BTreeMap, path::PathBuf};
 
 use bencode::{
-    bencode::BencodeError,
+    bencode::{Bencode, BencodeError},
     decoder::{self, DecoderError},
 };
 use sha1::{Digest, Sha1};
 
-use crate::util::{self, Dict};
+use crate::util;
+
+pub type Dict<'a> = BTreeMap<&'a [u8], Bencode<'a>>;
 
 #[derive(Debug, thiserror::Error)]
 pub enum MetainfoError {
@@ -28,6 +30,8 @@ pub enum MetainfoError {
     MissingFileInfo,
     #[error("file includes both `files` and `length` keys")]
     BothFileKeys,
+    #[error("the info's `start` and `end` span are out of bounds, please contact the dev")]
+    OutOfBoundsInfo,
     #[error(transparent)]
     DecoderError(#[from] DecoderError),
     #[error(transparent)]
@@ -71,7 +75,7 @@ pub struct FileEntry {
 }
 
 impl FileEntry {
-    fn new(length: u64, path: PathBuf, offset: u64) -> Self {
+    const fn new(length: u64, path: PathBuf, offset: u64) -> Self {
         Self {
             length,
             path,
@@ -118,7 +122,9 @@ impl Metainfo {
             .spans
             .get(b"info".as_slice())
             .ok_or(MetainfoError::KeyNotFound("info"))?;
-        let info_hash: [u8; 20] = Sha1::digest(&data[start..end]).into();
+
+        let info_hash: [u8; 20] =
+            Sha1::digest(data.get(start..end).ok_or(MetainfoError::OutOfBoundsInfo)?).into();
 
         Ok(Self {
             announce,

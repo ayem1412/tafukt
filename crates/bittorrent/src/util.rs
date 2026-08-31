@@ -1,18 +1,11 @@
-use std::{collections::BTreeMap, num::ParseIntError, path::PathBuf};
+use std::path::PathBuf;
 
 use bencode::bencode::Bencode;
 
-use crate::metainfo::MetainfoError;
-
-#[derive(Debug, thiserror::Error)]
-pub enum HexError {
-    #[error("hex string must have an even number of characters")]
-    OddLength,
-    #[error("invalid hex character: {0:?}")]
-    InvalidCharacter(char),
-}
-
-pub type Dict<'a> = BTreeMap<&'a [u8], Bencode<'a>>;
+use crate::{
+    hex,
+    metainfo::{Dict, MetainfoError},
+};
 
 pub fn get_key<'a>(
     dict: &'a Dict<'a>,
@@ -38,16 +31,6 @@ pub fn get_opt_string_lossy<'a>(
     }
 }
 
-pub fn to_hex(bytes: &[u8]) -> String {
-    use std::fmt::Write;
-
-    let mut out = String::with_capacity(bytes.len() * 2);
-    for byte in bytes {
-        let _ = write!(out, "{byte:02x}");
-    }
-    out
-}
-
 pub fn check_path_component(component: &[u8]) -> Result<(), MetainfoError> {
     if component.is_empty()
         || component == b"."
@@ -70,59 +53,28 @@ pub fn to_path(bytes: &[u8]) -> PathBuf {
     PathBuf::from(String::from_utf8_lossy(bytes).into_owned())
 }
 
-pub fn decode_hex(s: &str) -> Result<Vec<u8>, ParseIntError> {
-    (0..s.len())
-        .step_by(2)
-        .map(|i| u8::from_str_radix(&s[i..i + 2], 16))
-        .collect()
-}
-
-fn hex_value(byte: u8) -> Result<u8, HexError> {
-    match byte {
-        b'0'..=b'9' => Ok(byte - b'0'),
-        b'a'..=b'f' => Ok(byte - b'a' + 10),
-        b'A'..=b'F' => Ok(byte - b'A' + 10),
-        other => Err(HexError::InvalidCharacter(other as char)),
-    }
-}
-
-pub fn decode_hex_array<const N: usize>(s: &str) -> Result<[u8; N], HexError> {
-    let bytes = s.as_bytes();
-
-    if bytes.len() != N * 2 {
-        return Err(HexError::OddLength);
-    }
-
-    let mut out = [0u8; N];
-    for (slot, pair) in out.iter_mut().zip(bytes.as_chunks::<2>().0) {
-        *slot = hex_value(pair[0])? << 4 | hex_value(pair[1])?;
-    }
-
-    Ok(out)
-}
-
 pub fn percent_decode(s: &str) -> Vec<u8> {
     let bytes = s.as_bytes();
     let mut decoded = Vec::with_capacity(bytes.len());
     let mut i = 0;
 
-    while i < bytes.len() {
-        match bytes[i] {
+    while let Some(&byte) = bytes.get(i) {
+        match byte {
             b'+' => {
                 decoded.push(b' ');
                 i += 1;
             }
 
-            b'%' if i + 3 <= bytes.len() => {
-                match (hex_value(bytes[i + 1]), hex_value(bytes[i + 2])) {
-                    (Ok(high), Ok(low)) => {
-                        decoded.push(high << 4 | low);
-                        i += 3;
-                    }
-                    _ => {
-                        decoded.push(b'%');
-                        i += 1;
-                    }
+            b'%' => {
+                if let (Some(Ok(high)), Some(Ok(low))) = (
+                    bytes.get(i + 1).copied().map(hex::hex_value),
+                    bytes.get(i + 2).copied().map(hex::hex_value),
+                ) {
+                    decoded.push(high << 4 | low);
+                    i += 3;
+                } else {
+                    decoded.push(b'%');
+                    i += 1;
                 }
             }
 

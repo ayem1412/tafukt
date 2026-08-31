@@ -1,6 +1,6 @@
 use std::{net::SocketAddr, str::FromStr};
 
-use crate::util::{self, HexError};
+use crate::{hex, util};
 
 #[derive(Debug, thiserror::Error)]
 pub enum MagnetError {
@@ -15,7 +15,7 @@ pub enum MagnetError {
     #[error("the infohash must be 40 hex characters or 32 base32 characters")]
     InvalidHashLength,
     #[error(transparent)]
-    Hex(#[from] HexError),
+    Hex(#[from] hex::HexError),
 }
 
 #[derive(Debug)]
@@ -37,7 +37,7 @@ fn parse_xt(xt: &str) -> Result<[u8; 20], MagnetError> {
         .ok_or(MagnetError::NotBittorrentHash)?;
 
     match hash.len() {
-        40 => Ok(util::decode_hex_array(hash)?),
+        40 => Ok(hex::decode_hex_array(hash)?),
         32 => {
             let bytes = data_encoding::BASE32_NOPAD
                 .decode(hash.to_uppercase().as_bytes())
@@ -79,7 +79,7 @@ impl FromStr for Magnet {
             }
         }
 
-        Ok(Magnet {
+        Ok(Self {
             info_hash: info_hash.ok_or(MagnetError::MissingXt)?,
             display_name,
             trackers,

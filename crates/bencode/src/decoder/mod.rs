@@ -22,7 +22,7 @@ pub enum DecoderError {
     LeadingZero,
     #[error("negative zeros are not allowed in `Bencode`")]
     NegativeZero,
-    #[error("parse error")]
+    #[error(transparent)]
     CursorError(#[from] CursorError),
 }
 

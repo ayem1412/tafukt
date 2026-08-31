@@ -24,7 +24,7 @@ pub enum CursorError {
 }
 
 impl<'a> Cursor<'a> {
-    pub fn new(data: &'a [u8]) -> Self {
+    pub const fn new(data: &'a [u8]) -> Self {
         Self {
             data,
             pos: 0,
@@ -33,7 +33,7 @@ impl<'a> Cursor<'a> {
     }
 
     /// Current cursor position.
-    pub fn pos(&self) -> usize {
+    pub const fn pos(&self) -> usize {
         self.pos
     }
 
@@ -69,12 +69,12 @@ impl<'a> Cursor<'a> {
     }
 
     /// Trailing data.
-    pub fn is_empty(&self) -> bool {
+    pub const fn is_empty(&self) -> bool {
         self.pos >= self.data.len()
     }
 
     /// Increments the `depth` by 1 and errors if it's >= to `DEPTH_MAX`.
-    pub fn enter(&mut self) -> Result<(), CursorError> {
+    pub const fn enter(&mut self) -> Result<(), CursorError> {
         self.depth += 1;
 
         if self.depth >= DEPTH_MAX {
@@ -85,7 +85,7 @@ impl<'a> Cursor<'a> {
     }
 
     /// Decrements the `depth` by 1.
-    pub fn leave(&mut self) {
+    pub const fn leave(&mut self) {
         self.depth -= 1;
     }
 }
