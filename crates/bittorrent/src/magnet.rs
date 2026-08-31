@@ -30,7 +30,6 @@ pub struct Magnet {
     pub peer_addresses: Vec<SocketAddr>,
 }
 
-// TODO: handle base32
 fn parse_xt(xt: &str) -> Result<[u8; 20], MagnetError> {
     let hash = xt
         .strip_prefix("urn:btih:")
