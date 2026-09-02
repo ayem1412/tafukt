@@ -10,7 +10,11 @@
 //! let data = std::fs::read("example.torrent")?;
 //! let torrent = Metainfo::from_bytes(&data)?;
 //!
-//! println!("{} files, {} bytes", torrent.info.files.len(), torrent.info.length);
+//! println!(
+//!     "{} files, {} bytes",
+//!     torrent.info.files.len(),
+//!     torrent.info.length
+//! );
 //! # Ok::<(), Box<dyn std::error::Error>>(())
 //! ```
 //!
@@ -26,8 +30,8 @@
 //!
 //! Torrent files come from strangers, so parsing rejects:
 //!
-//! - paths containing `..`, separators, or null bytes, which could write
-//!   outside the download directory
+//! - paths containing `..`, separators, or null bytes, which could write outside the download
+//!   directory
 //! - negative file lengths, and offsets that overflow when summed
 //! - a piece count that disagrees with the total size
 //! - a `pieces` field whose length is not a multiple of 20

@@ -11,7 +11,10 @@
 //! across changes, use `criterion`, which handles warmup and statistics
 //! properly.
 
-use std::{hint::black_box, time::Duration, time::Instant};
+use std::{
+    hint::black_box,
+    time::{Duration, Instant},
+};
 
 use bencode::{decoder, encoder};
 
