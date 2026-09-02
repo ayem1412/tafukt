@@ -1,19 +1,22 @@
-use std::{fs, time::Instant};
+//! Print the contents of a `.torrent` file.
+//!
+//! ```text
+//! cargo run -p bencode --example try
+//! ```
+//!
+//! For timings, see the `bench` example.
+
+use std::fs;
 
 use bencode::decoder;
 
 fn main() {
-    let data = fs::read(format!(
-        "{}/torrents/debian.iso.torrent",
-        env!("CARGO_MANIFEST_DIR")
-    ))
-    .unwrap();
+    let path = concat!(env!("CARGO_MANIFEST_DIR"), "/torrents/debian.iso.torrent");
+    let data = fs::read(path).expect("put a .torrent at crates/bencode/torrents/");
 
-    let iterations = 10_000;
-    let start = Instant::now();
-    for _ in 0..iterations {
-        let value = decoder::decode(&data).unwrap();
-        std::hint::black_box(&value);
-    }
-    println!("{:?} per decode", start.elapsed() / iterations);
+    let value = decoder::decode(&data).expect("should be valid bencode");
+
+    // Display truncates long strings and summarises binary, so the `pieces`
+    // field doesn't flood the terminal with thousands of numbers.
+    println!("{value}");
 }
