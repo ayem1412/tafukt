@@ -56,5 +56,7 @@ pub mod metainfo;
 /// Shared helpers for reading bencode dictionaries.
 pub mod util;
 
+pub mod bitfield;
+
 pub use magnet::{Magnet, MagnetError};
 pub use metainfo::{FileEntry, Info, Metainfo, MetainfoError};

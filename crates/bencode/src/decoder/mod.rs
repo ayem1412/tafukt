@@ -280,7 +280,7 @@ pub struct DecodedRoot<'a> {
 ///
 /// let &(start, end) = decoded.spans.get(b"info".as_slice()).unwrap();
 /// let info_bytes = &data[start..end]; // hash these
-///     
+///
 /// # Ok::<(), Box<dyn std::error::Error>>(())
 /// ```
 pub fn decode_dictionary_with_spans(data: &[u8]) -> Result<DecodedRoot<'_>, DecoderError> {
